@@ -1,0 +1,47 @@
+  @keyframes tt-spin{ to{ transform:rotate(360deg); } }
+  .tt-row-input{
+    width:100%; padding:8px 10px; border-radius:7px; border:1.5px solid #e3e7ec;
+    font-size:13px; font-weight:700; color:#16233a; font-family:var(--font-ui);
+  }
+  .tt-row-input:focus{ outline:none; border-color:#14c8c4; }
+  .tt-field-label{ font-size:10.5px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; color:#51607a; margin-bottom:5px; display:block; }
+  .tt-panel.tt-pinned{ box-shadow:none !important; border-radius:0 !important; }
+  .tt-panel.tt-pinned #tt-panel-header{ border-radius:0 !important; }
+  .tt-panel.selected{
+    outline: 3px solid var(--c-teal);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px var(--c-teal-soft), 0 3px 12px rgba(15,42,74,0.12) !important;
+  }
+  /* Nothing inside the truth table panel is text-selectable — it's meant
+     to be dragged/clicked, not highlighted, so a click-drag never
+     accidentally selects table cell text instead of moving the panel. */
+  .tt-panel, .tt-panel *{
+    user-select:none !important; -webkit-user-select:none !important; -moz-user-select:none !important;
+  }
+  #tt-panel-drag-handle:hover{ background:rgba(255,255,255,0.12); }
+  .tt-panel{ cursor:grab; }
+  .tt-panel:active{ cursor:grabbing; }
+
+  /* Karnaugh map tool */
+  .km-section-title{ font-size:10.5px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:#51607a; margin-bottom:8px; }
+  .km-card{ background:#fff; border:1px solid #e3e7ec; border-radius:10px; padding:14px 16px; }
+  .km-expr{ font-family:'Courier New',monospace; font-size:14.5px; font-weight:700; color:#16233a; word-break:break-word; line-height:1.6; }
+  .km-table{ border-collapse:collapse; font-family:var(--font-ui); }
+  .km-table th, .km-table td{ border:1px solid #c9d3e0; text-align:center; }
+  .km-table th{ background:#0f2a4a; color:#f5f8fc; font-size:11.5px; font-weight:800; padding:6px 10px; }
+  .km-table td{ padding:6px 12px; font-weight:700; font-size:13px; color:#16233a; background:#fff; }
+  .km-grid-wrap{ transform-origin: top left; display:inline-block; }
+  .km-cell{ position:relative; width:54px; height:46px; text-align:center; vertical-align:middle; font-weight:800; font-size:15px; border:1px solid #c9d3e0; background:#fff; }
+  .km-cell .km-cell-val{ position:relative; z-index:2; }
+  .km-cell .km-cell-mt{ position:absolute; top:1px; left:3px; font-size:8px; font-weight:700; color:#9aa6b8; z-index:2; }
+  .km-cell-chips{ position:absolute; bottom:2px; right:2px; display:flex; gap:1px; z-index:2; }
+  .km-chip{ width:7px; height:7px; border-radius:2px; }
+  .km-axis-label{ font-size:10.5px; font-weight:800; color:#0f2a4a; letter-spacing:0.02em; }
+  .km-legend-item{ display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; color:#16233a; padding:3px 0; }
+  .km-legend-swatch{ width:14px; height:14px; border-radius:4px; flex:none; }
+  .km-legend-term{ font-family:'Courier New',monospace; font-weight:800; }
+  /* K-map panel shares pinned/selected style with the truth table panel */
+  .km-panel-el.tt-pinned{ box-shadow:none !important; border-radius:0 !important; }
+  .km-panel-el.tt-pinned #km-panel-header{ border-radius:0 !important; }
+  #km-panel-drag-handle:hover{ background:rgba(255,255,255,0.12); }
+  .km-panel-el, .km-panel-el *{ user-select:none !important; -webkit-user-select:none !important; }

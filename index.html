@@ -1,0 +1,1899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ArcLogic — Digital Logic Circuit Simulator</title>
+
+<!-- =========================================================================================
+     ARCLOGIC DIGITAL LOGIC CIRCUIT SIMULATOR — VERSION 4
+     =========================================================================================
+     ARCHITECTURE OVERVIEW (read this first if you are extending this file)
+
+     This file is organized into five layers, in this order:
+
+       1. CSS                – visual design system (tokens, layout, components)
+       2. HTML (workspace)   – static DOM skeleton: toolbar, toolbox, canvas, panels
+       3. JS Data Model       – Pin / Component / Wire classes + GateLibrary registry
+       4. JS Engines          – SimulationEngine (logic propagation), HistoryManager
+                                 (undo/redo), PersistenceManager (.ARLC save/load + autosave)
+       5. JS App / Controller – CanvasRenderer, SelectionManager, InputController, UIController,
+                                 and the App object that wires everything together + boots it.
+
+     EXTENSION POINTS for future versions (flip-flops, clocks, MUX, registers, etc.) are
+     marked with:   // [EXTENSION POINT] ...
+     Search for that tag to find every place future component types should be plugged in.
+
+     The core extensibility idea: every component "type" (AND, OR, a future D-Flip-Flop, etc.)
+     is just an entry in GateLibrary describing its pins + an `evaluate()` function. Adding a
+     new component type in a future version means adding a new GateLibrary entry — nothing
+     else in the rendering, wiring, selection, undo, or save system needs to change, *provided*
+     the new component is still a pure combinational function of its inputs. Stateful
+     components (flip-flops, clocks, memory) will need SimulationEngine to support internal
+     state + clock edges; the hook for that is marked in SimulationEngine below.
+     ========================================================================================= -->
+
+<link rel="stylesheet" href="app-styles.css">
+</head>
+<body>
+
+<!-- =====================================================================================
+     HTML LAYOUT
+     Four-row shell: top bar (file/edit actions) / tool strip (zoom + selection tools) /
+     main body (toolbox + canvas + properties) / status bar.
+     ===================================================================================== -->
+<div id="app">
+
+  <!-- ========================================= -->
+  <!-- Top Bar: file & edit actions                -->
+  <!-- ========================================= -->
+  <div id="top-bar">
+    <div id="menu-actions">
+
+      <!-- Files menu: New / Open / Save / Save As / Delete Design -->
+      <div class="menu-dropdown" id="menu-files">
+        <button class="top-btn" id="btn-files-toggle">Files</button>
+        <div class="dropdown-panel">
+          <div class="dropdown-item" id="btn-new">New</div>
+          <div class="dropdown-item" id="btn-open">Open</div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="btn-save">Save</div>
+          <div class="dropdown-item" id="btn-save-as">Save&nbsp;As</div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="btn-export-png">Export as PNG…</div>
+          <div class="dropdown-item" id="btn-export-jpg">Export as JPG…</div>
+          <div class="dropdown-item" id="btn-export-svg">Export as SVG…</div>
+          <div class="dropdown-item" id="btn-export-pdf">Export as PDF…</div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item danger" id="btn-delete-design">Delete&nbsp;Design</div>
+        </div>
+      </div>
+      <input type="file" id="file-input-hidden" accept=".arlc,.arlc.json,.json" />
+
+      <!-- Elements toggle: opens the full-width horizontal elements bar
+           below (#elements-bar), rather than a floating dropdown. -->
+      <button class="top-btn" id="btn-elements-toggle">Elements</button>
+
+      <!-- Edit menu: clipboard, transform, zoom, select, grid actions -->
+      <div class="menu-dropdown" id="menu-edit">
+        <button class="top-btn" id="btn-edit-toggle">Edit</button>
+        <div class="dropdown-panel">
+          <div class="dropdown-item" id="edit-undo"><span>Undo</span><span class="dropdown-shortcut">Ctrl+Z</span></div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="edit-delete"><span>Delete</span><span class="dropdown-shortcut">Del</span></div>
+          <div class="dropdown-item" id="edit-cut"><span>Cut</span><span class="dropdown-shortcut">Ctrl+X</span></div>
+          <div class="dropdown-item" id="edit-copy"><span>Copy</span><span class="dropdown-shortcut">Ctrl+C</span></div>
+          <div class="dropdown-item" id="edit-paste"><span>Paste</span><span class="dropdown-shortcut">Ctrl+V</span></div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="edit-rotate-cw"><span>Rotate CW</span><span class="dropdown-shortcut">R</span></div>
+          <div class="dropdown-item" id="edit-rotate-ccw"><span>Rotate CCW</span><span class="dropdown-shortcut">Shift+R</span></div>
+          <div class="dropdown-item" id="edit-flip-h"><span>Flip Horizontally</span><span class="dropdown-shortcut">H</span></div>
+          <div class="dropdown-item" id="edit-flip-v"><span>Flip Vertically</span><span class="dropdown-shortcut">V</span></div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="edit-select-all"><span>Select All</span><span class="dropdown-shortcut">Ctrl+A</span></div>
+          <div class="dropdown-item" id="edit-select-none"><span>Select None</span><span class="dropdown-shortcut">Ctrl+Shift+A</span></div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="edit-toggle-snap"><span>Grid Snap</span><span class="dropdown-shortcut dropdown-check" id="edit-snap-check">✓</span></div>
+          </div>
+      </div>
+
+      <!-- Tools menu: analysis utilities (truth table, future additions) -->
+      <div class="menu-dropdown" id="menu-tools">
+        <button class="top-btn" id="btn-tools-toggle">Tools</button>
+        <div class="dropdown-panel">
+          <div class="dropdown-item" id="tools-truth-table">Truth Table Maker</div>
+          <div class="dropdown-item" id="tools-kmap">Generate Karnaugh Map</div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="tools-convert-universal-trigger">Convert to Universal</div>
+          <div class="dropdown-item" id="tools-simplify-circuit">Simplify Circuit</div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="tools-boolexpr">Boolean Expression to Circuit</div>
+          <div class="dropdown-item" id="tools-circuit-to-boolexpr">Circuit to Boolean Expression</div>
+          <div class="dropdown-item" id="tools-simplify-boolexpr">Simplify Boolean Expression</div>
+          <div class="dropdown-item" id="tools-sop-pos">SOP ⇄ POS Converter</div>
+          <div class="dropdown-item" id="tools-kmap-to-circuit">K-map to Circuit</div>
+          <div class="dropdown-item" id="tools-kmap-tt">K-map ⇄ Truth Table</div>
+          <div class="dropdown-item" id="tools-tt-to-circuit">Truth Table to Circuit</div>
+        </div>
+      </div>
+
+      <!-- Kits toggle: opens the full-width horizontal kits bar below
+           (#kits-bar), same behavior as the Elements toggle. -->
+      <button class="top-btn" id="btn-kits-toggle">Kits</button>
+
+      <!-- View menu: workspace display options (canvas size, future additions) -->
+      <div class="menu-dropdown" id="menu-view">
+        <button class="top-btn" id="btn-view-toggle">View</button>
+        <div class="dropdown-panel">
+          <div class="dropdown-item view-zoom-row" id="view-zoom-row" style="cursor:default;">
+            <span>Zoom</span>
+            <span class="view-zoom-controls">
+              <button class="view-zoom-btn" id="view-zoom-out" title="Zoom out 10%">−</button>
+              <span id="view-zoom-readout">100%</span>
+              <button class="view-zoom-btn" id="view-zoom-in" title="Zoom in 10%">+</button>
+            </span>
+          </div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="view-zoom-fit"><span>Zoom to Fit</span><span class="dropdown-shortcut"></span></div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item" id="view-toggle-grid"><span>Hide Grid</span><span class="dropdown-shortcut"></span></div>
+          <div class="dropdown-item" id="view-toggle-rail"><span>Element Rail</span><span class="dropdown-shortcut dropdown-check" id="view-rail-check" style="visibility:hidden;">✓</span></div>
+          <div class="dropdown-item" id="view-toggle-design-tabs"><span id="view-design-tabs-label">Design Tabs Bar (Show on Hover)</span><span class="dropdown-shortcut dropdown-check" id="view-design-tabs-check" style="visibility:hidden;">✓</span></div>
+          <div class="dropdown-sep"></div>
+          <div class="dropdown-item has-submenu" id="view-canvas-size-trigger">
+            <span>Canvas Size</span>
+            <div class="dropdown-submenu" id="canvas-size-submenu">
+              <div class="dropdown-item canvas-size-item" data-size="small">
+                <span class="csi-label">
+                  <span>Small Design Canvas</span>
+                  <span class="csi-dims">90 × 51 grid squares</span>
+                </span>
+                <span class="csi-check" data-check></span>
+              </div>
+              <div class="dropdown-item canvas-size-item" data-size="medium">
+                <span class="csi-label">
+                  <span>Medium Design Canvas</span>
+                  <span class="csi-dims">224 × 128 grid squares</span>
+                </span>
+                <span class="csi-check" data-check></span>
+              </div>
+              <div class="dropdown-item canvas-size-item" data-size="large">
+                <span class="csi-label">
+                  <span>Large Design Canvas</span>
+                  <span class="csi-dims">448 × 256 grid squares</span>
+                </span>
+                <span class="csi-check" data-check></span>
+              </div>
+              <div class="dropdown-sep"></div>
+              <div class="dropdown-item canvas-size-item" data-size="infinite">
+                <span class="csi-label">
+                  <span>Infinite Canvas</span>
+                  <span class="csi-dims">Unlimited, no fixed boundaries</span>
+                </span>
+                <span class="csi-check" data-check></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Undo / Redo: icon-only SVG buttons -->
+    <div id="history-actions">
+      <button class="icon-btn" id="btn-undo" title="Undo (Ctrl+Z)">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M7 7H15.5C18.5376 7 21 9.46243 21 12.5C21 15.5376 18.5376 18 15.5 18H10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10.5 3.5L7 7L10.5 10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="btn-redo" title="Redo (Ctrl+Y)">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17 7H8.5C5.46243 7 3 9.46243 3 12.5C3 15.5376 5.46243 18 8.5 18H14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M13.5 3.5L17 7L13.5 10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================= -->
+  <!-- Elements Bar: full-width horizontal strip  -->
+  <!-- of all gates/inputs/outputs, shown when    -->
+  <!-- "Elements" is toggled on.                  -->
+  <!-- ========================================= -->
+  <div id="elements-bar">
+
+    <!-- Gates section -->
+    <div class="elements-bar-section">
+      <div class="elements-bar-section-label">Gates</div>
+      <div class="elements-bar-chips">
+
+        <div class="element-chip" draggable="true" data-gate-type="AND">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="9" x2="12" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="2" y1="21" x2="12" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M12,4 L22,4 A11,11 0 0 1 22,26 L12,26 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <line x1="33" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">AND</div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="OR">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="9" x2="11" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="2" y1="21" x2="11" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M8,4 Q18,4 22,4 C32,4 37,11 38,15 C37,19 32,26 22,26 C18,26 8,26 8,26 Q13,19 13,15 Q13,11 8,4 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <line x1="38" y1="15" x2="42" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">OR</div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="NOT">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="15" x2="8" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M8,4 L8,26 L29,15 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <circle cx="32" cy="15" r="3" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <line x1="35" y1="15" x2="40" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">NOT</div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="NAND">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="9" x2="10" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="2" y1="21" x2="10" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M10,4 L20,4 A11,11 0 0 1 20,26 L10,26 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <circle cx="32" cy="15" r="3" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <line x1="35" y1="15" x2="40" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">NAND</div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="NOR">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="9" x2="9" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="2" y1="21" x2="9" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M6,4 Q14,4 18,4 C26,4 31,11 32,15 C31,19 26,26 18,26 C14,26 6,26 6,26 Q11,19 11,15 Q11,11 6,4 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <circle cx="35" cy="15" r="3" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <line x1="38" y1="15" x2="42" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">NOR</div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="XOR">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="9" x2="12" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="2" y1="21" x2="12" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M10,4 Q18,4 22,4 C30,4 36,11 37,15 C36,19 30,26 22,26 C18,26 10,26 10,26 Q15,19 15,15 Q15,11 10,4 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <path d="M6,4 Q11,11 11,15 Q11,19 6,26" fill="none" stroke="#0f2a4a" stroke-width="1.8"/>
+            <line x1="37" y1="15" x2="42" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">XOR</div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="XNOR">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="9" x2="10" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="2" y1="21" x2="10" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M8,4 Q16,4 20,4 C28,4 33,11 34,15 C33,19 28,26 20,26 C16,26 8,26 8,26 Q13,19 13,15 Q13,11 8,4 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <path d="M4,4 Q9,11 9,15 Q9,19 4,26" fill="none" stroke="#0f2a4a" stroke-width="1.8"/>
+            <circle cx="37" cy="15" r="3" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <line x1="40" y1="15" x2="44" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">XNOR</div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="BUFFER">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="15" x2="8" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M8,4 L8,26 L32,15 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <line x1="32" y1="15" x2="40" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">BUF</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Inputs section -->
+    <div class="elements-bar-section">
+      <div class="elements-bar-section-label">Inputs</div>
+      <div class="elements-bar-chips">
+
+        <!-- Switch Palette: hover/click to open 1–8 switch submenu -->
+        <!-- Switch: left-click body = 1 switch; click ▾ tab or right-click = open 2–8 menu -->
+        <div class="switch-palette-wrapper" id="switch-palette-bar">
+          <div class="element-chip switch-palette-chip" id="switch-palette-btn-bar" title="Switch — click to place · right-click or ▾ for multiple">
+            <div class="sw-chip-body">
+              <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+                <rect x="3" y="9.5" width="29" height="11" rx="5.5" fill="#e0364a" stroke="#c4243a" stroke-width="1"/>
+                <circle cx="11" cy="15" r="5" fill="white" stroke="#c0c8d4" stroke-width="0.8"
+                  style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.25))"/>
+                <text x="11" y="17.8" text-anchor="middle" font-weight="900" font-size="5" fill="#c4243a" font-family="monospace">0</text>
+                <line x1="32" y1="15" x2="40" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+              </svg></div>
+              <div class="chip-name">Switch</div>
+            </div>
+            <div class="sw-chip-arrow-tab" id="switch-palette-arrow-bar">
+              <svg viewBox="0 0 10 6" fill="none">
+                <path d="M1 1L5 5 9 1" stroke="#8a93a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="switch-palette-submenu" id="switch-palette-submenu-bar"></div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="HIGH">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <rect x="6" y="7" width="22" height="16" rx="4" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <text x="17" y="19" text-anchor="middle" font-weight="900" font-size="11" fill="#1fae5c" font-family="monospace">1</text>
+            <line x1="28" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">HIGH</div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="LOW">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <rect x="6" y="7" width="22" height="16" rx="4" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <text x="17" y="19" text-anchor="middle" font-weight="900" font-size="11" fill="#e0364a" font-family="monospace">0</text>
+            <line x1="28" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">LOW</div>
+        </div>
+
+        <!-- Variable Palette: hover/click to open 1–8 variable submenu -->
+        <!-- Variable: left-click body = 1 variable; click ▾ tab or right-click = open 2–8 menu -->
+        <div class="switch-palette-wrapper" id="variable-palette-bar">
+          <div class="element-chip switch-palette-chip" id="variable-palette-btn-bar" title="Variable — click to place · right-click or ▾ for multiple">
+            <div class="sw-chip-body">
+              <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+                <rect x="4" y="5" width="24" height="20" rx="5" fill="#eef2ff" stroke="#5577cc" stroke-width="1.5"/>
+                <rect x="5" y="6" width="22" height="5" rx="1.5" fill="rgba(255,255,255,0.65)"/>
+                <text x="16" y="21" text-anchor="middle" font-weight="700" font-size="13" fill="#1e4ab0"
+                  font-family="Georgia,serif" font-style="italic">A</text>
+                <line x1="28" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+              </svg></div>
+              <div class="chip-name">Var</div>
+            </div>
+            <div class="sw-chip-arrow-tab" id="variable-palette-arrow-bar">
+              <svg viewBox="0 0 10 6" fill="none">
+                <path d="M1 1L5 5 9 1" stroke="#8a93a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="switch-palette-submenu" id="variable-palette-submenu-bar"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Wiring section -->
+    <div class="elements-bar-section">
+      <div class="elements-bar-section-label">Wiring</div>
+      <div class="elements-bar-chips">
+
+        <div class="element-chip" draggable="true" data-gate-type="NODE" title="Node — junction point, fan-out a signal to multiple destinations">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <!-- single junction dot -->
+            <circle cx="20" cy="15" r="6" fill="#0f2a4a"/>
+          </svg></div>
+          <div class="chip-name">NODE</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Outputs section -->
+    <div class="elements-bar-section">
+      <div class="elements-bar-section-label">Outputs</div>
+      <div class="elements-bar-chips">
+
+        <!-- LED Palette: hover/click to open 1–8 LED submenu -->
+        <!-- LED: left-click body = 1 LED; click ▾ tab or right-click = open 2–8 menu -->
+        <div class="switch-palette-wrapper" id="led-palette-bar">
+          <div class="element-chip switch-palette-chip" id="led-palette-btn-bar" title="LED — click to place · right-click or ▾ for multiple">
+            <div class="sw-chip-body">
+              <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+                <line x1="2" y1="15" x2="10" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+                <circle cx="22" cy="15" r="10" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+                <circle cx="22" cy="15" r="5" fill="#8a93a1"/>
+                <line x1="27" y1="6" x2="31" y2="3" stroke="#f0c040" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="30" y1="10" x2="35" y2="9" stroke="#f0c040" stroke-width="1.5" stroke-linecap="round"/>
+              </svg></div>
+              <div class="chip-name">LED</div>
+            </div>
+            <div class="sw-chip-arrow-tab" id="led-palette-arrow-bar">
+              <svg viewBox="0 0 10 6" fill="none">
+                <path d="M1 1L5 5 9 1" stroke="#8a93a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="switch-palette-submenu" id="led-palette-submenu-bar"></div>
+        </div>
+
+        <!-- Probe Palette: hover/click to open 1–8 probe submenu -->
+        <!-- Probe: left-click body = 1 probe; click ▾ tab or right-click = open 2–8 menu -->
+        <div class="switch-palette-wrapper" id="probe-palette-bar">
+          <div class="element-chip switch-palette-chip" id="probe-palette-btn-bar" title="Probe — click to place · right-click or ▾ for multiple">
+            <div class="sw-chip-body">
+              <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+                <line x1="2" y1="15" x2="8" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+                <rect x="8" y="5" width="26" height="20" rx="4" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+                <text x="21" y="20" text-anchor="middle" font-weight="900" font-size="13" fill="#0f2a4a" font-family="monospace">X</text>
+              </svg></div>
+              <div class="chip-name">Probe</div>
+            </div>
+            <div class="sw-chip-arrow-tab" id="probe-palette-arrow-bar">
+              <svg viewBox="0 0 10 6" fill="none">
+                <path d="M1 1L5 5 9 1" stroke="#8a93a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="switch-palette-submenu" id="probe-palette-submenu-bar"></div>
+        </div>
+
+        <div class="element-chip" draggable="true" data-gate-type="SEVENSEG">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="15" x2="9" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <rect x="9" y="4" width="20" height="22" rx="2" fill="#101010" stroke="#0f2a4a" stroke-width="1.5"/>
+            <path d="M12,6 L26,6 M12,6 L12,14 M26,6 L26,14 M12,14 L26,14 M12,14 L12,23 M26,14 L26,23 M12,23 L26,23"
+              stroke="#ff3b30" stroke-width="2" stroke-linecap="round"/>
+          </svg></div>
+          <div class="chip-name">7-Seg</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Annotate section -->
+    <div class="elements-bar-section" style="border-right:none;">
+      <div class="elements-bar-section-label">Annotate</div>
+      <div class="elements-bar-chips">
+
+        <div class="element-chip" draggable="true" data-gate-type="TEXT" title="Text — click to place a text label, double-click it to edit">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <text x="20" y="23" text-anchor="middle" font-weight="800" font-size="20" fill="#0f2a4a" font-family="Georgia, 'Times New Roman', serif">T</text>
+          </svg></div>
+          <div class="chip-name">Text</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========================================= -->
+  <!-- Kits Bar: full-width horizontal strip,     -->
+  <!-- shown when "Kits" is toggled on. Mirrors   -->
+  <!-- the Elements Bar exactly (same chip style, -->
+  <!-- same grid row, same open/close behavior).  -->
+  <!-- ========================================= -->
+  <div id="kits-bar">
+
+    <div class="elements-bar-section">
+      <div class="elements-bar-section-label">Kits</div>
+      <div class="elements-bar-chips">
+
+        <div class="kit-item kit-chip" id="kit-bcd-seg" data-gate-type="BCDSEG" title="BCD → 7-Segment Decoder">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <!-- 4 input lines A B C D -->
+            <line x1="0" y1="7"  x2="8" y2="7"  stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="12" x2="8" y2="12" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="18" x2="8" y2="18" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="23" x2="8" y2="23" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <!-- chip body -->
+            <rect x="8" y="3" width="12" height="24" rx="2" fill="white" stroke="#0f2a4a" stroke-width="1.3"/>
+            <text x="14" y="17" text-anchor="middle" font-weight="900" font-size="5.5" fill="#0f2a4a" font-family="monospace">BCD</text>
+            <!-- 7-seg output face -->
+            <rect x="22" y="4" width="16" height="22" rx="1.5" fill="#101010" stroke="#0f2a4a" stroke-width="1.2"/>
+            <!-- digit "8" - all segments lit to show it's a 7-seg output -->
+            <path d="M25,6 L35,6 M25,6 L25,14 M35,6 L35,14 M25,14 L35,14 M25,14 L25,23 M35,14 L35,23 M25,23 L35,23"
+              stroke="#ff3b30" stroke-width="1.6" stroke-linecap="round"/>
+          </svg></div>
+          <div class="kit-chip-arrow" data-kit-arrow title="Choose view: Block Diagram or Full Circuit"><svg viewBox="0 0 10 10"><path d="M2 3.5 L5 6.5 L8 3.5"/></svg></div>
+          <div class="chip-name">BCD→7</div>
+        </div>
+
+        <div class="kit-item kit-chip" id="kit-mux" data-gate-type="MUX" title="4-to-1 Multiplexer">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="0" y1="6"  x2="10" y2="6"  stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="12" x2="10" y2="12" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="18" x2="10" y2="18" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="24" x2="10" y2="24" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M10,3 L30,10 L30,20 L10,27 Z" fill="white" stroke="#0f2a4a" stroke-width="1.3"/>
+            <text x="19" y="16.5" text-anchor="middle" font-weight="900" font-size="5.5" fill="#0f2a4a" font-family="monospace">MUX</text>
+            <line x1="30" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+          </svg></div>
+          <div class="kit-chip-arrow" data-kit-arrow title="Choose view: Block Diagram or Full Circuit"><svg viewBox="0 0 10 10"><path d="M2 3.5 L5 6.5 L8 3.5"/></svg></div>
+          <div class="chip-name">Multiplexer</div>
+        </div>
+
+        <div class="kit-item kit-chip" id="kit-demux" data-gate-type="DEMUX" title="1-to-4 Demultiplexer">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="0" y1="15" x2="10" y2="15" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M10,10 L30,3 L30,27 L10,20 Z" fill="white" stroke="#0f2a4a" stroke-width="1.3"/>
+            <text x="19" y="16.5" text-anchor="middle" font-weight="900" font-size="4.7" fill="#0f2a4a" font-family="monospace">DMX</text>
+            <line x1="30" y1="6"  x2="38" y2="6"  stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="12" x2="38" y2="12" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="18" x2="38" y2="18" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="24" x2="38" y2="24" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+          </svg></div>
+          <div class="kit-chip-arrow" data-kit-arrow title="Choose view: Block Diagram or Full Circuit"><svg viewBox="0 0 10 10"><path d="M2 3.5 L5 6.5 L8 3.5"/></svg></div>
+          <div class="chip-name">Demultiplexer</div>
+        </div>
+
+        <div class="kit-item kit-chip" id="kit-decoder" data-gate-type="DECODER" title="2-to-4 Line Decoder">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="0" y1="8"  x2="10" y2="8"  stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="15" x2="10" y2="15" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="22" x2="10" y2="22" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M10,10 L30,3 L30,27 L10,20 Z" fill="white" stroke="#0f2a4a" stroke-width="1.3"/>
+            <text x="19" y="16.5" text-anchor="middle" font-weight="900" font-size="5" fill="#0f2a4a" font-family="monospace">DEC</text>
+            <line x1="30" y1="6"  x2="38" y2="6"  stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="12" x2="38" y2="12" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="18" x2="38" y2="18" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="24" x2="38" y2="24" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+          </svg></div>
+          <div class="kit-chip-arrow" data-kit-arrow title="Choose view: Block Diagram or Full Circuit"><svg viewBox="0 0 10 10"><path d="M2 3.5 L5 6.5 L8 3.5"/></svg></div>
+          <div class="chip-name">Decoder</div>
+        </div>
+
+        <div class="kit-item kit-chip" id="kit-encoder" data-gate-type="ENCODER" title="4-to-2 Encoder">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="0" y1="6"  x2="10" y2="6"  stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="12" x2="10" y2="12" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="18" x2="10" y2="18" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="24" x2="10" y2="24" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M10,3 L30,10 L30,20 L10,27 Z" fill="white" stroke="#0f2a4a" stroke-width="1.3"/>
+            <text x="19" y="16.5" text-anchor="middle" font-weight="900" font-size="5" fill="#0f2a4a" font-family="monospace">ENC</text>
+            <line x1="30" y1="12" x2="38" y2="12" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="18" x2="38" y2="18" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+          </svg></div>
+          <div class="kit-chip-arrow" data-kit-arrow title="Choose view: Block Diagram or Full Circuit"><svg viewBox="0 0 10 10"><path d="M2 3.5 L5 6.5 L8 3.5"/></svg></div>
+          <div class="chip-name">Encoder</div>
+        </div>
+
+        <div class="kit-item kit-chip" id="kit-priority-encoder" data-gate-type="PRIORITYENC" title="4-to-2 Priority Encoder">
+          <div class="chip-svg"><svg viewBox="0 0 40 30" fill="none">
+            <line x1="0" y1="6"  x2="10" y2="6"  stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="12" x2="10" y2="12" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="18" x2="10" y2="18" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="0" y1="24" x2="10" y2="24" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M10,3 L30,10 L30,20 L10,27 Z" fill="white" stroke="#0f2a4a" stroke-width="1.3"/>
+            <text x="19" y="16.5" text-anchor="middle" font-weight="900" font-size="4.2" fill="#0f2a4a" font-family="monospace">PENC</text>
+            <line x1="30" y1="11" x2="38" y2="11" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="30" y1="19" x2="38" y2="19" stroke="#0f2a4a" stroke-width="1.3" stroke-linecap="round"/>
+          </svg></div>
+          <div class="kit-chip-arrow" data-kit-arrow title="Choose view: Block Diagram or Full Circuit"><svg viewBox="0 0 10 10"><path d="M2 3.5 L5 6.5 L8 3.5"/></svg></div>
+          <div class="chip-name">Priority Encoder</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========================================= -->
+  <!-- Vertical Elements Rail: fixed, icon-only,  -->
+  <!-- always visible on the right edge.          -->
+  <!-- ========================================= -->
+  <div id="elements-rail">
+
+    <div class="rail-section-label">Gates</div>
+    <div class="rail-chip" draggable="true" data-gate-type="AND" data-label="AND">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="9" x2="12" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="2" y1="21" x2="12" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M12,4 L22,4 A11,11 0 0 1 22,26 L12,26 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <line x1="33" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="OR" data-label="OR">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="9" x2="11" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="2" y1="21" x2="11" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8,4 Q18,4 22,4 C32,4 37,11 38,15 C37,19 32,26 22,26 C18,26 8,26 8,26 Q13,19 13,15 Q13,11 8,4 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <line x1="38" y1="15" x2="42" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="NOT" data-label="NOT">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="15" x2="8" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8,4 L8,26 L29,15 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <circle cx="32" cy="15" r="3" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <line x1="35" y1="15" x2="40" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="NAND" data-label="NAND">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="9" x2="10" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="2" y1="21" x2="10" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M10,4 L20,4 A11,11 0 0 1 20,26 L10,26 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <circle cx="32" cy="15" r="3" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <line x1="35" y1="15" x2="40" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="NOR" data-label="NOR">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="9" x2="9" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="2" y1="21" x2="9" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M6,4 Q14,4 18,4 C26,4 31,11 32,15 C31,19 26,26 18,26 C14,26 6,26 6,26 Q11,19 11,15 Q11,11 6,4 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <circle cx="35" cy="15" r="3" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <line x1="38" y1="15" x2="42" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="XOR" data-label="XOR">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="9" x2="12" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="2" y1="21" x2="12" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M10,4 Q18,4 22,4 C30,4 36,11 37,15 C36,19 30,26 22,26 C18,26 10,26 10,26 Q15,19 15,15 Q15,11 10,4 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <path d="M6,4 Q11,11 11,15 Q11,19 6,26" fill="none" stroke="#0f2a4a" stroke-width="1.8"/>
+        <line x1="37" y1="15" x2="42" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="XNOR" data-label="XNOR">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="9" x2="10" y2="9" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="2" y1="21" x2="10" y2="21" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8,4 Q16,4 20,4 C28,4 33,11 34,15 C33,19 28,26 20,26 C16,26 8,26 8,26 Q13,19 13,15 Q13,11 8,4 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <path d="M4,4 Q9,11 9,15 Q9,19 4,26" fill="none" stroke="#0f2a4a" stroke-width="1.8"/>
+        <circle cx="37" cy="15" r="3" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <line x1="40" y1="15" x2="44" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="BUFFER" data-label="BUF">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="15" x2="8" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8,4 L8,26 L32,15 Z" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <line x1="32" y1="15" x2="40" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <div class="rail-divider"></div>
+    <div class="rail-section-label">Wire</div>
+    <div class="rail-chip" draggable="true" data-gate-type="NODE" data-label="NODE" title="Node — junction / fan-out point">
+      <svg viewBox="0 0 40 30" fill="none">
+        <circle cx="20" cy="15" r="6" fill="#0f2a4a"/>
+      </svg>
+    </div>
+
+    <div class="rail-divider"></div>
+    <div class="rail-section-label">In</div>
+    <div class="switch-palette-wrapper rail-variant" id="switch-palette-rail">
+      <div class="rail-chip switch-palette-chip" id="switch-palette-btn-rail" title="Switch — click · right-click for multiple">
+        <div class="sw-chip-body">
+          <svg viewBox="0 0 40 30" fill="none">
+            <rect x="3" y="9.5" width="29" height="11" rx="5.5" fill="#e0364a" stroke="#c4243a" stroke-width="1"/>
+            <circle cx="11" cy="15" r="5" fill="white" stroke="#c0c8d4" stroke-width="0.8"/>
+            <text x="11" y="17.8" text-anchor="middle" font-weight="900" font-size="5" fill="#c4243a" font-family="monospace">0</text>
+            <line x1="32" y1="15" x2="40" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="sw-chip-arrow-tab" id="switch-palette-arrow-rail">
+          <svg viewBox="0 0 10 6" fill="none">
+            <path d="M1 1L5 5 9 1" stroke="#8a93a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+      <div class="switch-palette-submenu" id="switch-palette-submenu-rail"></div>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="HIGH" data-label="HIGH">
+      <svg viewBox="0 0 40 30" fill="none">
+        <rect x="6" y="7" width="22" height="16" rx="4" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <text x="17" y="19" text-anchor="middle" font-weight="900" font-size="11" fill="#1fae5c" font-family="monospace">1</text>
+        <line x1="28" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="LOW" data-label="LOW">
+      <svg viewBox="0 0 40 30" fill="none">
+        <rect x="6" y="7" width="22" height="16" rx="4" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+        <text x="17" y="19" text-anchor="middle" font-weight="900" font-size="11" fill="#e0364a" font-family="monospace">0</text>
+        <line x1="28" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="switch-palette-wrapper rail-variant" id="variable-palette-rail">
+      <div class="rail-chip switch-palette-chip" id="variable-palette-btn-rail" title="Variable — click · right-click for multiple">
+        <div class="sw-chip-body">
+          <svg viewBox="0 0 40 30" fill="none">
+            <rect x="4" y="5" width="24" height="20" rx="5" fill="#eef2ff" stroke="#5577cc" stroke-width="1.5"/>
+            <rect x="5" y="6" width="22" height="5" rx="1.5" fill="rgba(255,255,255,0.65)"/>
+            <text x="16" y="21" text-anchor="middle" font-weight="700" font-size="13" fill="#1e4ab0" font-family="Georgia,serif" font-style="italic">A</text>
+            <line x1="28" y1="15" x2="38" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="sw-chip-arrow-tab" id="variable-palette-arrow-rail">
+          <svg viewBox="0 0 10 6" fill="none">
+            <path d="M1 1L5 5 9 1" stroke="#8a93a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+      <div class="switch-palette-submenu" id="variable-palette-submenu-rail"></div>
+    </div>
+
+    <div class="rail-divider"></div>
+    <div class="rail-section-label">Out</div>
+    <div class="switch-palette-wrapper rail-variant" id="led-palette-rail">
+      <div class="rail-chip switch-palette-chip" id="led-palette-btn-rail" title="LED — click · right-click for multiple">
+        <div class="sw-chip-body">
+          <svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="15" x2="10" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <circle cx="22" cy="15" r="10" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <circle cx="22" cy="15" r="5" fill="#8a93a1"/>
+            <line x1="27" y1="6" x2="31" y2="3" stroke="#f0c040" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="30" y1="10" x2="35" y2="9" stroke="#f0c040" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="sw-chip-arrow-tab" id="led-palette-arrow-rail">
+          <svg viewBox="0 0 10 6" fill="none">
+            <path d="M1 1L5 5 9 1" stroke="#8a93a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+      <div class="switch-palette-submenu" id="led-palette-submenu-rail"></div>
+    </div>
+    <div class="switch-palette-wrapper rail-variant" id="probe-palette-rail">
+      <div class="rail-chip switch-palette-chip" id="probe-palette-btn-rail" title="Probe — click · right-click for multiple">
+        <div class="sw-chip-body">
+          <svg viewBox="0 0 40 30" fill="none">
+            <line x1="2" y1="15" x2="8" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+            <rect x="8" y="5" width="26" height="20" rx="4" fill="white" stroke="#0f2a4a" stroke-width="1.8"/>
+            <text x="21" y="20" text-anchor="middle" font-weight="900" font-size="13" fill="#0f2a4a" font-family="monospace">X</text>
+          </svg>
+        </div>
+        <div class="sw-chip-arrow-tab" id="probe-palette-arrow-rail">
+          <svg viewBox="0 0 10 6" fill="none">
+            <path d="M1 1L5 5 9 1" stroke="#8a93a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+      <div class="switch-palette-submenu" id="probe-palette-submenu-rail"></div>
+    </div>
+    <div class="rail-chip" draggable="true" data-gate-type="SEVENSEG" data-label="7-Seg">
+      <svg viewBox="0 0 40 30" fill="none">
+        <line x1="2" y1="15" x2="9" y2="15" stroke="#0f2a4a" stroke-width="1.8" stroke-linecap="round"/>
+        <rect x="9" y="4" width="20" height="22" rx="2" fill="#101010" stroke="#0f2a4a" stroke-width="1.5"/>
+        <path d="M12,6 L26,6 M12,6 L12,14 M26,6 L26,14 M12,14 L26,14 M12,14 L12,23 M26,14 L26,23 M12,23 L26,23"
+          stroke="#ff3b30" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <div class="rail-divider"></div>
+    <div class="rail-section-label">Note</div>
+    <div class="rail-chip" draggable="true" data-gate-type="TEXT" data-label="Text" title="Text — click to place · double-click to edit">
+      <svg viewBox="0 0 40 30" fill="none">
+        <text x="20" y="23" text-anchor="middle" font-weight="800" font-size="20" fill="#0f2a4a" font-family="Georgia, 'Times New Roman', serif">T</text>
+      </svg>
+    </div>
+
+  </div>
+
+  <!-- ========================================= -->
+  <!-- Tool Strip: zoom + grid + selection tools  -->
+  <!-- ========================================= -->
+  <div id="tool-strip">
+    <div class="strip-group">
+      <span class="ui-label">Wire Width</span>
+      <div id="wire-width-tool">
+        <button class="strip-btn" disabled title="Wire width is fixed at 4.4px" style="opacity:0.4;cursor:not-allowed;color:var(--c-gray-mid);">−</button>
+        <div id="wire-width-readout">4.4px</div>
+        <button class="strip-btn" disabled title="Wire width is fixed at 4.4px" style="opacity:0.4;cursor:not-allowed;color:var(--c-gray-mid);">+</button>
+      </div>
+    </div>
+    <div class="strip-group">
+      <span class="ui-label" id="selection-readout">No selection</span>
+    </div>
+  </div>
+
+  <!-- ========================================= -->
+  <!-- Main Body                                  -->
+  <!-- ========================================= -->
+  <div id="main-body">
+
+    <!-- ===================== -->
+    <!-- Canvas Viewport        -->
+    <!-- ===================== -->
+    <div id="canvas-viewport">
+      <canvas id="grid-canvas"></canvas>
+      <canvas id="wire-canvas"></canvas>
+      <div id="component-layer"><div id="world"></div></div>
+      <canvas id="overlay-canvas"></canvas>
+      <div id="selection-box"></div>
+      <div id="canvas-border-frame"></div>
+      <!-- Convert-to-Universal selection banner: shown after picking NAND/NOR
+           from the Tools menu, while the person selects which gates on the
+           canvas should be converted. -->
+      <div id="univ-convert-banner" style="display:none;">
+        <div id="univ-convert-banner-icon">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 8h5l5 4-5 4H4z" stroke="#f5a623" stroke-width="2" stroke-linejoin="round"/><path d="M14 12h6M17 9l3 3-3 3" stroke="#f5a623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div id="univ-convert-banner-copy">
+          <div id="univ-convert-banner-title">Convert to Universal<span class="univ-target-pill" id="univ-convert-target-pill">NAND</span></div>
+          <span id="univ-convert-banner-text">Click gates on the canvas to select them.</span>
+        </div>
+        <div id="univ-convert-banner-actions">
+          <button id="univ-convert-apply" disabled><span>Convert</span><span id="univ-convert-apply-count">0</span></button>
+          <button id="univ-convert-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========================================= -->
+  <!-- Design Tabs Bar (multiple open designs)    -->
+  <!-- ========================================= -->
+  <div id="design-tabs-bar">
+    <div id="design-tabs-list"></div>
+    <button id="design-tab-add" title="New design">+</button>
+  </div>
+  <!-- ========================================= -->
+  <!-- Status Bar                                 -->
+  <!-- ========================================= -->
+  <div id="status-bar">
+    <div class="status-group">
+      <span id="cursor-coords">x: 0, y: 0</span>
+      <span id="component-count">0 components</span>
+      <span id="wire-count">0 wires</span>
+      <span id="pending-wire-hint" style="display:none;color:var(--c-teal);font-weight:800;letter-spacing:0.03em;">⬤ Click canvas to add corner · Click pin to connect · Esc to cancel</span>
+    </div>
+    <div class="status-group">
+      <span id="autosave-indicator"><span class="dot"></span>Autosaved</span>
+      <span>ArcLogic v1.0</span>
+      <div class="strip-divider" style="background:rgba(255,255,255,0.18);"></div>
+      <div id="select-tool">
+        <button class="strip-btn" id="btn-select-mode" title="Selection box mode (drag to select; right-click empty canvas → Select, or tap again to toggle)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke-dasharray="3.2 3.2"/>
+            <circle cx="3.5" cy="3.5" r="1.6" fill="currentColor" stroke="none"/>
+            <circle cx="20.5" cy="3.5" r="1.6" fill="currentColor" stroke="none"/>
+            <circle cx="3.5" cy="20.5" r="1.6" fill="currentColor" stroke="none"/>
+            <circle cx="20.5" cy="20.5" r="1.6" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
+      </div>
+      <div class="strip-divider" style="background:rgba(255,255,255,0.18);"></div>
+      <div id="zoom-tool">
+        <button class="strip-btn" id="btn-zoom-out" title="Zoom out">−</button>
+        <div id="zoom-readout">100%</div>
+        <button class="strip-btn" id="btn-zoom-in" title="Zoom in">+</button>
+        <button class="strip-btn" id="btn-zoom-reset" title="Reset view (Fit)">⤢</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Properties Floating Modal (right-click on component) -->
+  <div id="props-modal">
+    <div id="props-modal-header">
+      <span id="props-modal-title">Properties</span>
+      <button id="props-modal-close">✕</button>
+    </div>
+    <div id="props-modal-body">
+      <div id="properties-content"></div>
+    </div>
+  </div>
+
+  <!-- Context menu (right-click) -->
+  <div id="context-menu">
+    <div id="ctx-main-items">
+      <!-- Standard copy (shown when NOT right-clicking a bank switch) -->
+      <div class="ctx-item" data-action="copy" id="ctx-copy-standard">Copy</div>
+      <!-- Linked copy for a plain (non-bank) switch -->
+      <div class="ctx-item" data-action="linked-copy" id="ctx-linked-copy" style="display:none;">
+        Linked Copy <span style="font-size:10px;opacity:0.55;font-weight:600;">(switch)</span>
+      </div>
+      <!-- ── Bank-specific copy options (shown only when right-clicking a bank switch) ── -->
+      <div id="ctx-bank-copy-group" style="display:none;">
+        <div style="font-size:9px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--c-text-soft);padding:6px 10px 3px;">Copy</div>
+        <div class="ctx-item" data-action="bank-copy-one" id="ctx-bank-copy-one">
+          This Switch Only
+        </div>
+        <div class="ctx-item" data-action="bank-copy-all" id="ctx-bank-copy-all">
+          Whole Group
+        </div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--c-text-soft);padding:6px 10px 3px;margin-top:2px;">Linked Copy</div>
+        <div class="ctx-item" data-action="bank-linked-copy-one" id="ctx-bank-linked-copy-one">
+          This Switch Only <span style="font-size:10px;opacity:0.55;font-weight:600;">linked</span>
+        </div>
+        <div class="ctx-item" data-action="bank-linked-copy-all" id="ctx-bank-linked-copy-all">
+          Whole Group <span style="font-size:10px;opacity:0.55;font-weight:600;">linked</span>
+        </div>
+      </div>
+      <!-- ── Variable-specific copy options ── -->
+      <div id="ctx-variable-copy-group" style="display:none;">
+        <div style="font-size:9px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--c-text-soft);padding:6px 10px 3px;">Copy This Variable</div>
+        <div class="ctx-item" data-action="var-copy-same" id="ctx-var-copy-same">
+          Same Letter <span style="font-size:10px;opacity:0.55;font-weight:600;" id="ctx-var-copy-same-lbl"></span>
+        </div>
+        <div class="ctx-item" data-action="var-copy-new" id="ctx-var-copy-new">
+          New Letter <span style="font-size:10px;opacity:0.55;font-weight:600;">auto-assign</span>
+        </div>
+        <div id="ctx-var-group-section" style="display:none;">
+          <div style="font-size:9px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--c-text-soft);padding:6px 10px 3px;margin-top:2px;" id="ctx-var-group-label">Copy Whole Group</div>
+          <div class="ctx-item" data-action="var-group-copy-same" id="ctx-var-group-copy-same">
+            Same Letters <span style="font-size:10px;opacity:0.55;font-weight:600;" id="ctx-var-group-same-lbl"></span>
+          </div>
+          <div class="ctx-item" data-action="var-group-copy-new" id="ctx-var-group-copy-new">
+            New Letters <span style="font-size:10px;opacity:0.55;font-weight:600;">sequential</span>
+          </div>
+        </div>
+      </div>
+      <!-- ── End variable copy options ── -->
+      <div class="ctx-item" data-action="paste">Paste</div>
+      <div class="ctx-item" data-action="select-mode" id="ctx-select-mode" style="display:none;">Select</div>
+      <div class="ctx-item" data-action="select-all" id="ctx-select-all" style="display:none;">Select All</div>
+      <div class="ctx-item" data-action="refresh" id="ctx-refresh">Refresh</div>
+      <div class="ctx-item" data-action="rotate">Rotate 90°</div>
+      <div class="ctx-item" data-action="delete">Delete</div>
+      <div style="height:1px;background:var(--c-gray);margin:5px 4px;" id="ctx-truth-table-sep"></div>
+      <div class="ctx-item" data-action="truth-table" id="ctx-truth-table" style="display:none;">Truth Table Maker</div>
+      <div class="ctx-item" data-action="kmap" id="ctx-kmap" style="display:none;">Generate Karnaugh Map</div>
+      <div style="height:1px;background:var(--c-gray);margin:5px 4px;"></div>
+      <div class="ctx-item" data-action="properties">Properties <span style="font-size:10px;opacity:0.5;">›</span></div>
+      <!-- Conversion Tool (empty-canvas right-click only): its own section,
+           set off with a divider like Properties above. Clicking it opens
+           a centered popup where the person picks NAND or NOR, then
+           selects the gates on the canvas and taps Convert. -->
+      <div style="height:1px;background:var(--c-gray);margin:5px 4px;" id="ctx-conversion-tool-sep"></div>
+      <div class="ctx-item" data-action="conversion-tool" id="ctx-conversion-tool" style="display:none;">Conversion Tool <span style="font-size:10px;opacity:0.5;">›</span></div>
+      <!-- Simplify Circuit (empty-canvas right-click only): reduces the
+           selected sub-circuit (or the whole sheet, if nothing is
+           selected) to the minimal equivalent gate network via the same
+           Quine–McCluskey pipeline used by the Tools menu's analysis
+           tools. See App.openSimplifyCircuitTool. -->
+      <div class="ctx-item" data-action="simplify-circuit" id="ctx-simplify-circuit" style="display:none;">Simplify Circuit</div>
+    </div>
+    <div id="ctx-props-section">
+      <div class="ctx-back" id="ctx-back-btn">‹ Back</div>
+      <div class="ctx-props-title" id="ctx-props-title">Properties</div>
+      <div id="ctx-props-inner"></div>
+    </div>
+  </div>
+
+  <!-- Conversion Tool popup: opened from the Conversion Tool item at the
+       bottom of the right-click (empty-canvas) menu. Centered on screen,
+       matching the New Circuit / Delete Design confirmation modals, rather
+       than a flyout submenu — picking an option here starts the "select
+       the gates on the canvas, then tap Convert" banner flow. -->
+  <div id="conversion-tool-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:200; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); padding:26px 24px 22px; width:340px; max-width:90vw;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+        <div style="width:30px; height:30px; border-radius:8px; background:var(--c-amber-soft); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 8h5l5 4-5 4H4z" stroke="#f5a623" stroke-width="2" stroke-linejoin="round"/><path d="M14 12h6M17 9l3 3-3 3" stroke="#f5a623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Conversion Tool</div>
+      </div>
+      <div style="font-size:12.5px; color:#51607a; margin-bottom:18px; line-height:1.55;">Choose which universal gate to rebuild your circuit's gates with.</div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button class="conversion-tool-option" id="conversion-tool-nand" data-target="NAND" style="display:flex; align-items:center; justify-content:space-between; text-align:left; padding:12px 14px; border-radius:9px; border:1.5px solid #e3e7ec; background:#fff; cursor:pointer; font-family:inherit;">
+          <span>
+            <span style="display:block; font-weight:800; font-size:13px; color:#0f2a4a;">NAND Only</span>
+            <span style="display:block; font-size:11px; color:#8a93a1; font-weight:600; margin-top:1px;">Rebuild selected gates from NAND gates</span>
+          </span>
+          <span style="font-size:14px; opacity:0.4;">›</span>
+        </button>
+        <button class="conversion-tool-option" id="conversion-tool-nor" data-target="NOR" style="display:flex; align-items:center; justify-content:space-between; text-align:left; padding:12px 14px; border-radius:9px; border:1.5px solid #e3e7ec; background:#fff; cursor:pointer; font-family:inherit;">
+          <span>
+            <span style="display:block; font-weight:800; font-size:13px; color:#0f2a4a;">NOR Only</span>
+            <span style="display:block; font-size:11px; color:#8a93a1; font-weight:600; margin-top:1px;">Rebuild selected gates from NOR gates</span>
+          </span>
+          <span style="font-size:14px; opacity:0.4;">›</span>
+        </button>
+        <button class="conversion-tool-option" id="conversion-tool-and" data-target="AND" style="display:flex; align-items:center; justify-content:space-between; text-align:left; padding:12px 14px; border-radius:9px; border:1.5px solid #e3e7ec; background:#fff; cursor:pointer; font-family:inherit;">
+          <span>
+            <span style="display:block; font-weight:800; font-size:13px; color:#0f2a4a;">AND + NOT</span>
+            <span style="display:block; font-size:11px; color:#8a93a1; font-weight:600; margin-top:1px;">Rebuild selected gates from AND and NOT gates</span>
+          </span>
+          <span style="font-size:14px; opacity:0.4;">›</span>
+        </button>
+        <button class="conversion-tool-option" id="conversion-tool-or" data-target="OR" style="display:flex; align-items:center; justify-content:space-between; text-align:left; padding:12px 14px; border-radius:9px; border:1.5px solid #e3e7ec; background:#fff; cursor:pointer; font-family:inherit;">
+          <span>
+            <span style="display:block; font-weight:800; font-size:13px; color:#0f2a4a;">OR + NOT</span>
+            <span style="display:block; font-size:11px; color:#8a93a1; font-weight:600; margin-top:1px;">Rebuild selected gates from OR and NOT gates</span>
+          </span>
+          <span style="font-size:14px; opacity:0.4;">›</span>
+        </button>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:18px;">
+        <button id="conversion-tool-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Design confirmation modal -->
+  <div id="delete-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:200; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); padding:28px 24px 22px; width:440px; max-width:92vw;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#e0364a" stroke-width="1.8"/><path d="M10 6v5M10 13.5v.5" stroke="#e0364a" stroke-width="2" stroke-linecap="round"/></svg>
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Delete Design</div>
+      </div>
+      <div style="font-size:12.5px; color:#51607a; margin-bottom:20px; line-height:1.55;">Do you want to delete just this design, or every open design? <strong style="color:#c0243a;">This cannot be undone.</strong></div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; flex-wrap:nowrap;">
+        <button id="delete-cancel" style="padding:9px 14px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:12.5px; color:#51607a; cursor:pointer; white-space:nowrap;">Cancel</button>
+        <button id="delete-confirm-all" style="padding:9px 14px; border-radius:8px; border:1.5px solid #e0364a; background:#fff; font-weight:800; font-size:12.5px; color:#e0364a; cursor:pointer; white-space:nowrap;">Delete All Designs</button>
+        <button id="delete-confirm" style="padding:9px 14px; border-radius:8px; border:none; background:#e0364a; font-weight:800; font-size:12.5px; color:#fff; cursor:pointer; white-space:nowrap;">Delete This Design</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Circuit confirmation modal -->
+  <div id="new-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:200; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); padding:28px 28px 22px; width:340px; max-width:90vw;">
+      <div style="font-weight:800; font-size:15px; color:#0f2a4a; margin-bottom:6px;">New Circuit</div>
+      <div style="font-size:12.5px; color:#51607a; margin-bottom:20px; line-height:1.55;">Start a new circuit? Unsaved changes will be lost.</div>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button id="new-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="new-confirm" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">New Circuit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Open Circuit modal -->
+  <div id="open-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:200; align-items:center; justify-content:center;">
+    <div id="open-dialog" style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); padding:28px 28px 22px; width:360px; max-width:90vw;">
+      <div style="font-weight:800; font-size:15px; color:#0f2a4a; margin-bottom:4px;">Open Circuit</div>
+      <div style="font-size:12.5px; color:#51607a; margin-bottom:18px;">Load an .arlc design file.</div>
+      <!-- Drop zone -->
+      <div id="open-dropzone" style="border:2px dashed #c4cbd4; border-radius:10px; background:#f8f9fb; padding:30px 18px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; transition:border-color .15s, background .15s;">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" style="opacity:0.45;"><rect x="4" y="8" width="28" height="22" rx="3" stroke="#4a5568" stroke-width="2"/><path d="M18 24V14M18 14L14 18M18 14L22 18" stroke="#4a5568" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div style="font-size:13px; font-weight:700; color:#4a5568; text-align:center;">Drag &amp; drop an .arlc file here</div>
+        <div style="font-size:11.5px; color:#8a93a1;">or</div>
+        <button id="open-browse-btn" style="padding:8px 20px; border-radius:8px; border:1.5px solid #14c8c4; background:#f0fffe; font-weight:800; font-size:12.5px; color:#0f7b78; cursor:pointer;">Browse file…</button>
+      </div>
+      <div id="open-error" style="display:none; margin-top:12px; font-size:12px; color:#e0364a; font-weight:700; text-align:center;"></div>
+      <div style="display:flex; justify-content:flex-end; margin-top:18px;">
+        <button id="open-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save As modal -->
+  <div id="saveas-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:200; align-items:center; justify-content:center;">
+    <div id="saveas-dialog" style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); padding:28px 28px 22px; width:340px; max-width:90vw;">
+      <div style="font-weight:800; font-size:15px; color:#0f2a4a; margin-bottom:6px;">Save As</div>
+      <div style="font-size:12.5px; color:#51607a; margin-bottom:16px;">Choose a name for your design file.</div>
+      <div style="display:flex; align-items:center; gap:0; border:1.5px solid #e3e7ec; border-radius:8px; overflow:hidden; background:#f4f6f9;">
+        <input id="saveas-input" type="text" placeholder="circuit"
+          style="flex:1; border:none; background:transparent; padding:10px 12px; font-size:13px; font-weight:700; color:#16233a; outline:none;" />
+        <span style="padding:10px 12px; font-size:13px; font-weight:700; color:#8a93a1; background:#edf0f4; border-left:1.5px solid #e3e7ec;">.arlc</span>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+        <button id="saveas-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="saveas-confirm" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename Design modal (custom app-drawn popup — replaces the old
+       in-tab contenteditable rename, which rendered as the browser's
+       native text-editing caret/selection UI rather than an app control) -->
+  <div id="dt-rename-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:200; align-items:center; justify-content:center;">
+    <div id="dt-rename-dialog" style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); padding:28px 28px 22px; width:320px; max-width:90vw;">
+      <div style="font-weight:800; font-size:15px; color:#0f2a4a; margin-bottom:6px;">Rename Design</div>
+      <div style="font-size:12.5px; color:#51607a; margin-bottom:16px;">Choose a name for this design tab.</div>
+      <div style="display:flex; align-items:center; border:1.5px solid #e3e7ec; border-radius:8px; overflow:hidden; background:#f4f6f9;">
+        <input id="dt-rename-input" type="text" placeholder="Design name" maxlength="40"
+          style="flex:1; border:none; background:transparent; padding:10px 12px; font-size:13px; font-weight:700; color:#16233a; outline:none;" />
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+        <button id="dt-rename-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="dt-rename-confirm" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Export Preview Modal                                         -->
+  <!-- ============================================================ -->
+  <div id="export-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.65); z-index:300; align-items:flex-start; justify-content:center; padding:24px 16px; overflow-y:auto;">
+    <div id="export-dialog" style="background:#fff; border-radius:14px; box-shadow:0 16px 60px rgba(10,29,51,0.35); width:720px; max-width:100%; display:flex; flex-direction:column; gap:0;">
+
+      <!-- Header -->
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:18px 22px 14px; border-bottom:1px solid #e3e7ec;">
+        <div>
+          <div style="font-weight:800; font-size:15px; color:#0f2a4a;" id="export-dialog-title">Export Circuit</div>
+          <div style="font-size:12px; color:#51607a; margin-top:2px;">Adjust options, preview, then download.</div>
+        </div>
+        <button id="export-close-btn" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #e3e7ec;background:#f4f6f9;cursor:pointer;font-size:18px;color:#51607a;display:flex;align-items:center;justify-content:center;">✕</button>
+      </div>
+
+      <!-- Body: options + preview -->
+      <div style="display:flex; gap:0; min-height:340px;">
+
+        <!-- Left: Options Panel -->
+        <div style="width:220px; flex-shrink:0; border-right:1px solid #e3e7ec; padding:18px 18px; display:flex; flex-direction:column; gap:14px;">
+
+          <div>
+            <div style="font-weight:800; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:#51607a; margin-bottom:10px;">Visibility</div>
+
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:8px;">
+              <input type="checkbox" id="exp-show-labels" checked style="accent-color:#14c8c4;width:15px;height:15px;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">Component labels</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:8px;">
+              <input type="checkbox" id="exp-show-pins" checked style="accent-color:#14c8c4;width:15px;height:15px;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">Pin state dots</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:8px;">
+              <input type="checkbox" id="exp-show-grid" style="accent-color:#14c8c4;width:15px;height:15px;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">Grid</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:8px;">
+              <input type="checkbox" id="exp-show-wire-color" checked style="accent-color:#14c8c4;width:15px;height:15px;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">Wire signal colors</span>
+            </label>
+          </div>
+
+          <div style="border-top:1px solid #e3e7ec; padding-top:14px;">
+            <div style="font-weight:800; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:#51607a; margin-bottom:10px;">Switch Display</div>
+            <div style="font-size:12px; color:#51607a; margin-bottom:8px; line-height:1.4;">How switches appear in the export:</div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
+              <input type="radio" name="exp-switch-mode" value="state" checked style="accent-color:#14c8c4;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">Show ON/OFF state</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
+              <input type="radio" name="exp-switch-mode" value="natural" style="accent-color:#14c8c4;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">Natural (neutral) state</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="radio" name="exp-switch-mode" value="symbol" style="accent-color:#14c8c4;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">Generic symbol only</span>
+            </label>
+          </div>
+
+          <div style="border-top:1px solid #e3e7ec; padding-top:14px;">
+            <div style="font-weight:800; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:#51607a; margin-bottom:10px;">Background</div>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:8px;">
+              <input type="radio" name="exp-bg" value="white" checked style="accent-color:#14c8c4;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">White</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+              <input type="radio" name="exp-bg" value="transparent" style="accent-color:#14c8c4;">
+              <span style="font-size:12.5px;font-weight:700;color:#16233a;">Transparent (PNG only)</span>
+            </label>
+          </div>
+
+          <button id="exp-refresh-btn" style="margin-top:auto; padding:9px 0; border-radius:8px; border:1.5px solid #14c8c4; background:#f0fffe; font-weight:800; font-size:12.5px; color:#0f7b78; cursor:pointer; transition:background .12s;">↻ Refresh Preview</button>
+        </div>
+
+        <!-- Right: Preview Area -->
+        <div style="flex:1; display:flex; flex-direction:column; background:#f4f6f9;">
+          <div style="padding:12px 16px; font-weight:800; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:#51607a; border-bottom:1px solid #e3e7ec; background:#fff;">Preview</div>
+          <div style="flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:20px;">
+            <div id="export-preview-wrap" style="background:#fff; border:1.5px solid #e3e7ec; border-radius:6px; overflow:hidden; max-width:100%; box-shadow:0 2px 10px rgba(10,29,51,0.1);">
+              <canvas id="export-preview-canvas" style="display:block; max-width:100%; height:auto;"></canvas>
+            </div>
+          </div>
+          <div id="exp-preview-status" style="padding:8px 16px; font-size:11.5px; font-weight:700; color:#51607a; background:#fff; border-top:1px solid #e3e7ec; text-align:center;">Generating preview…</div>
+        </div>
+      </div>
+
+      <!-- Footer: Download Buttons -->
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 22px; border-top:1px solid #e3e7ec; gap:10px; flex-wrap:wrap;">
+        <span style="font-size:12px; color:#8a93a1; font-weight:700;">Format:</span>
+        <div style="display:flex; gap:8px; flex:1; justify-content:flex-end; flex-wrap:wrap;">
+          <button class="exp-dl-btn" id="exp-dl-png" data-fmt="png" style="padding:9px 18px; border-radius:8px; border:none; background:#1e5fcc; font-weight:800; font-size:13px; color:#fff; cursor:pointer;">⬇ PNG</button>
+          <button class="exp-dl-btn" id="exp-dl-jpg" data-fmt="jpg" style="padding:9px 18px; border-radius:8px; border:none; background:#1e5fcc; font-weight:800; font-size:13px; color:#fff; cursor:pointer;">⬇ JPG</button>
+          <button class="exp-dl-btn" id="exp-dl-svg" data-fmt="svg" style="padding:9px 18px; border-radius:8px; border:none; background:#1e5fcc; font-weight:800; font-size:13px; color:#fff; cursor:pointer;">⬇ SVG</button>
+          <button class="exp-dl-btn" id="exp-dl-pdf" data-fmt="pdf" style="padding:9px 18px; border-radius:8px; border:none; background:#0f2a4a; font-weight:800; font-size:13px; color:#fff; cursor:pointer;">⬇ PDF</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- =========================================================================
+     TRUTH TABLE MAKER — setup modal (name the outputs) + loading state,
+     and the floating, draggable result panel rendered like a spreadsheet.
+     ========================================================================= -->
+<div id="tt-setup-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="tt-setup-dialog" style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:380px; max-width:92vw; max-height:84vh; display:flex; flex-direction:column; overflow:hidden;">
+    <!-- Step 1: name outputs -->
+    <div id="tt-setup-form" style="display:flex; flex-direction:column; max-height:84vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Truth Table Maker</div>
+        <div id="tt-setup-subtitle" style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Name each output before the table is generated.</div>
+      </div>
+      <div style="padding:10px 22px 0;">
+        <input type="text" class="tt-row-input" id="tt-setup-tablename" maxlength="40" placeholder="Table name" spellcheck="false">
+      </div>
+      <div id="tt-setup-body" style="padding:14px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:10px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid #e3e7ec;">
+        <button id="tt-setup-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="tt-setup-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Generate</button>
+      </div>
+    </div>
+    <!-- Step 2: loading -->
+    <div id="tt-setup-loading" style="display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:46px 22px;">
+      <div style="width:34px; height:34px; border-radius:50%; border:3.5px solid #d8e6f7; border-top-color:#1e5fcc; animation: tt-spin 0.8s linear infinite;"></div>
+      <div style="font-weight:800; font-size:13.5px; color:#0f2a4a;">Generating truth table…</div>
+      <div style="font-size:11.5px; color:#8a93a1; font-weight:700;">Evaluating every input combination</div>
+    </div>
+  </div>
+</div>
+
+<!-- In-app rename dialog for the truth table — replaces the native
+     browser prompt() so naming never pops up an OS/browser dialog. -->
+<div id="tt-rename-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:290; align-items:center; justify-content:center;">
+  <div id="tt-rename-dialog" style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:320px; max-width:90vw; padding:20px 22px; display:flex; flex-direction:column; gap:10px;">
+    <div style="font-weight:800; font-size:14.5px; color:#0f2a4a;">Name This Truth Table</div>
+    <input type="text" class="tt-row-input" id="tt-rename-input" maxlength="40" placeholder="Table name" spellcheck="false">
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:4px;">
+      <button id="tt-rename-cancel" style="padding:8px 16px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:12.5px; color:#51607a; cursor:pointer;">Cancel</button>
+      <button id="tt-rename-save" style="padding:8px 18px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:12.5px; color:#0a1d33; cursor:pointer;">Save</button>
+    </div>
+  </div>
+</div>
+<link rel="stylesheet" href="truth-table-kmap-styles.css">
+
+<!-- Floating panels (Truth Table / K-map) live inside this clipping strip,
+     which is kept synced to the canvas viewport's vertical extent every
+     frame. Just like a gate panned under the top toolbar or status bar
+     gets cropped by the canvas viewport's own overflow:hidden, a panel
+     dragged or panned toward those edges now gets visually cropped here
+     instead of being held fully on-screen. pointer-events:none lets clicks
+     pass through the empty strip; each panel re-enables pointer-events on
+     itself so it stays fully interactive. -->
+<div id="floating-panels-clip" style="position:fixed; left:0; right:0; overflow:hidden; pointer-events:none; z-index:25;"></div>
+
+<!-- Floating result panel: positioned absolutely so it can be dragged anywhere over the workspace -->
+<div id="tt-panel" class="tt-panel" style="display:none; position:fixed; z-index:25; background:#fff; border-radius:12px; box-shadow:var(--shadow-lg); border:1px solid var(--c-gray); overflow:hidden; min-width:260px; max-width:90vw; pointer-events:auto;">
+  <div id="tt-panel-header" style="background:linear-gradient(180deg, var(--c-navy) 0%, var(--c-navy-deep) 100%); color:#f5f8fc; padding:10px 8px 10px 8px; display:flex; align-items:center; justify-content:space-between; gap:10px; user-select:none;">
+    <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+      <div id="tt-panel-drag-handle" title="Drag to move" style="cursor:grab; width:22px; height:26px; border-radius:5px; display:flex; align-items:center; justify-content:center; flex:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.85;"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
+      </div>
+      <div style="font-weight:800; font-size:12.5px; letter-spacing:0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Truth Table</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:4px; flex:none;">
+      <button id="tt-panel-play" title="Play through all combinations" style="width:26px; height:26px; border-radius:6px; border:none; background:rgba(255,255,255,0.1); color:#f5f8fc; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+        <svg id="tt-play-icon" width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.7C3 1 3.8 0.6 4.4 1L14 7.1C14.5 7.4 14.5 8.1 14 8.4L4.4 14.5C3.8 14.9 3 14.5 3 13.8V1.7Z"/></svg>
+      </button>
+      <button id="tt-panel-props" title="Properties (name / delete)" style="width:26px; height:26px; border-radius:6px; border:none; background:rgba(255,255,255,0.1); color:#f5f8fc; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="tt-panel-body" style="overflow:visible; padding:0; user-select:none; -webkit-user-select:none;"></div>
+  <div id="tt-panel-name" style="display:none; padding:8px 14px; font-size:11.5px; font-weight:700; color:#51607a; background:#f4f6f9; border-top:1px solid #e3e7ec; letter-spacing:0.01em; user-select:none; -webkit-user-select:none;"></div>
+</div>
+
+<!-- Right-click context menu for the truth table panel: rename / delete -->
+<div id="tt-panel-ctxmenu" style="display:none; position:fixed; z-index:280; background:#fff; border-radius:8px; box-shadow:var(--shadow-lg); border:1px solid var(--c-gray); min-width:150px; padding:4px; font-family:var(--font-ui);">
+  <div class="ctx-item" id="tt-ctx-rename" style="padding:8px 12px; font-size:12.5px; font-weight:700; color:#16233a; cursor:pointer; border-radius:6px;">Name table…</div>
+  <div class="ctx-item" id="tt-ctx-delete" style="padding:8px 12px; font-size:12.5px; font-weight:700; color:#c0392b; cursor:pointer; border-radius:6px;">Delete table</div>
+</div>
+
+<!-- =====================================================================
+     KARNAUGH MAP TOOL
+     Step 1 (km-setup-overlay): pick which output to map (and a name),
+     same visual language as the Truth Table Maker setup dialog.
+     ===================================================================== -->
+<div id="km-setup-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="km-setup-dialog" style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:380px; max-width:92vw; max-height:84vh; display:flex; flex-direction:column; overflow:hidden;">
+    <div id="km-setup-form" style="display:flex; flex-direction:column; max-height:84vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Generate Karnaugh Map</div>
+        <div id="km-setup-subtitle" style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Choose which circuit output to map.</div>
+      </div>
+      <div id="km-setup-body" style="padding:14px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid #e3e7ec;">
+        <button id="km-setup-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="km-setup-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Generate</button>
+      </div>
+    </div>
+    <div id="km-setup-loading" style="display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:46px 22px;">
+      <div style="width:34px; height:34px; border-radius:50%; border:3.5px solid #d8e6f7; border-top-color:#1e5fcc; animation: tt-spin 0.8s linear infinite;"></div>
+      <div style="font-weight:800; font-size:13.5px; color:#0f2a4a;">Analyzing circuit…</div>
+      <div style="font-size:11.5px; color:#8a93a1; font-weight:700;">Deriving truth table and minimizing</div>
+    </div>
+    <div id="km-setup-error" style="display:none; flex-direction:column; gap:14px; padding:30px 22px;">
+      <div style="font-weight:800; font-size:14px; color:#c0392b;">Can't generate a Karnaugh map</div>
+      <div id="km-setup-error-msg" style="font-size:12.5px; color:#51607a; line-height:1.6;"></div>
+      <div style="display:flex; justify-content:flex-end;">
+        <button id="km-setup-error-close" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     BOOLEAN EXPRESSION TO CIRCUIT
+     A plain, normal input dialog: a text field for the expression, plus an
+     on-screen keypad of variable/operator keys for people who'd rather tap
+     than type. The chevron toggle sits centered above the keypad so a
+     keyboard-only user can collapse it down to just the input field.
+     ===================================================================== -->
+<div id="boolexpr-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="boolexpr-dialog" style="background:#fff; border-radius:14px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:480px; max-width:94vw; max-height:92vh; display:flex; flex-direction:column; overflow:hidden;">
+    <div id="boolexpr-form" style="display:flex; flex-direction:column; max-height:92vh; overflow-y:auto;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Boolean Expression to Circuit</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Type or tap out an expression, then Generate to drop the wired circuit onto the canvas.</div>
+      </div>
+
+      <!-- Expression input -->
+      <div style="padding:14px 22px 0;">
+        <input type="text" id="boolexpr-input" class="boolexpr-screen" maxlength="300" placeholder="A.B + C'" spellcheck="false" autocomplete="off">
+      </div>
+      <div id="boolexpr-error" style="display:none; margin:10px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5;"></div>
+
+      <!-- Centered collapse toggle, sitting between the input and the keypad -->
+      <div style="display:flex; justify-content:center; margin:12px 0 -2px;">
+        <button id="boolexpr-toggle-pad" class="boolexpr-toggle-arrow" title="Hide/show keypad">
+          <span id="boolexpr-toggle-label">Hide keypad</span>
+          <svg id="boolexpr-toggle-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.15s;"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+
+      <!-- Keypad: a plain, light card holding the operator/variable keys -->
+      <div id="boolexpr-pad" style="padding:12px 22px 4px;">
+        <div class="boolexpr-calc-body">
+          <div id="boolexpr-pad-fn" class="boolexpr-calc-row"></div>
+          <div id="boolexpr-pad-letters" class="boolexpr-calc-row" style="margin-bottom:10px;"></div>
+          <div id="boolexpr-pad-bottom" class="boolexpr-calc-row"></div>
+        </div>
+      </div>
+
+      <div style="padding:16px 22px 4px; display:flex; align-items:center; gap:10px;">
+        <div class="tt-field-label" style="margin-bottom:0; flex:none;">Output</div>
+        <div style="display:flex; gap:8px;">
+          <label class="boolexpr-output-choice">
+            <input type="radio" name="boolexpr-output-type" value="LED" checked> LED
+          </label>
+          <label class="boolexpr-output-choice">
+            <input type="radio" name="boolexpr-output-type" value="PROBE"> Probe (shows 0/1)
+          </label>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px;">
+        <button id="boolexpr-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="boolexpr-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Generate</button>
+      </div>
+    </div>
+  </div>
+</div>
+<link rel="stylesheet" href="boolean-expression-styles.css">
+
+<!-- =====================================================================
+     CIRCUIT TO BOOLEAN EXPRESSION
+     The reverse of "Boolean Expression to Circuit": pick the output(s) of
+     a selected circuit (or the whole sheet), and this derives the Boolean
+     expression each one implements — brute-forcing the truth table via
+     the same SimulationEngine-based _ttCompute used by the Truth Table
+     Maker/K-map tools, then reading it back out with Quine–McCluskey
+     minimization (KMapEngine.minimize). Same 4-state layout (form /
+     loading / results / error) as the Karnaugh Map tool's dialog.
+     ===================================================================== -->
+<div id="circexpr-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="circexpr-dialog" style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:420px; max-width:94vw; max-height:86vh; display:flex; flex-direction:column; overflow:hidden;">
+    <div id="circexpr-setup-form" style="display:flex; flex-direction:column; max-height:86vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Circuit to Boolean Expression</div>
+        <div id="circexpr-subtitle" style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Select the circuit you want analyzed (including its variables and output), then run this.</div>
+      </div>
+      <div id="circexpr-body" style="padding:14px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid #e3e7ec;">
+        <button id="circexpr-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="circexpr-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Get Expression</button>
+      </div>
+    </div>
+    <div id="circexpr-loading" style="display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:46px 22px;">
+      <div style="width:34px; height:34px; border-radius:50%; border:3.5px solid #d8e6f7; border-top-color:#1e5fcc; animation: tt-spin 0.8s linear infinite;"></div>
+      <div style="font-weight:800; font-size:13.5px; color:#0f2a4a;">Reading the circuit…</div>
+      <div style="font-size:11.5px; color:#8a93a1; font-weight:700;">Deriving truth table and simplifying</div>
+    </div>
+    <div id="circexpr-results" style="display:none; flex-direction:column; max-height:86vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Boolean Expression</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">One row per output. Tap Copy, or Build to drop it straight into the Boolean Expression to Circuit tool.</div>
+      </div>
+      <div id="circexpr-results-body" style="padding:14px 22px 4px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:12px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid #e3e7ec;">
+        <button id="circexpr-results-close" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Close</button>
+      </div>
+    </div>
+    <div id="circexpr-error" style="display:none; flex-direction:column; gap:14px; padding:30px 22px;">
+      <div style="font-weight:800; font-size:14px; color:#c0392b;">Can't derive a Boolean expression</div>
+      <div id="circexpr-error-msg" style="font-size:12.5px; color:#51607a; line-height:1.6;"></div>
+      <div style="display:flex; justify-content:flex-end;">
+        <button id="circexpr-error-close" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+<link rel="stylesheet" href="circuit-expression-styles.css">
+
+<!-- =====================================================================
+     SIMPLIFY CIRCUIT
+     Reduces a selected sub-circuit (or the whole sheet, if nothing is
+     selected) to the minimal equivalent gate network. Reuses the exact
+     same _ttCollectIO()/_ttCompute() brute-force pipeline as Circuit to
+     Boolean Expression, reduces each chosen output with the Quine–
+     McCluskey engine (App._ceAnalyzeOutput), then rebuilds only the
+     internal gates from the simplified expression — the existing
+     VARIABLE inputs and LED/Probe outputs are left in place and rewired,
+     never recreated. Same 4-state dialog shape (form / loading / result /
+     error) as the other analysis tools. The "result" state builds the
+     new network onto the canvas right away (so App._scRunSimplify can
+     reuse the exact placement/collision logic that already existed) but
+     holds off on the history commit -- a snapshot taken *before* the
+     rebuild is stashed on App._scPendingSnapshot. The result panel shows
+     a small schematic preview of the new network plus before/after
+     stats (gates / connections / wiring length) and asks the user to
+     confirm or cancel: Confirm just commits the already-applied change
+     to history, Cancel restores the stashed snapshot, silently undoing
+     the rebuild as if it never ran.
+     ===================================================================== -->
+<div id="simplifycirc-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="simplifycirc-dialog" style="background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:420px; max-width:94vw; max-height:86vh; display:flex; flex-direction:column; overflow:hidden; transition:width 0.15s ease;">
+    <div id="simplifycirc-setup-form" style="display:flex; flex-direction:column; max-height:86vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Simplify Circuit</div>
+        <div id="simplifycirc-subtitle" style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Select the circuit you want simplified (including its variables and output), then run this.</div>
+      </div>
+      <div id="simplifycirc-body" style="padding:14px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid #e3e7ec;">
+        <button id="simplifycirc-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="simplifycirc-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Simplify</button>
+      </div>
+    </div>
+    <div id="simplifycirc-loading" style="display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:46px 22px;">
+      <div style="width:34px; height:34px; border-radius:50%; border:3.5px solid #d8e6f7; border-top-color:#1e5fcc; animation: tt-spin 0.8s linear infinite;"></div>
+      <div style="font-weight:800; font-size:13.5px; color:#0f2a4a;">Simplifying…</div>
+      <div style="font-size:11.5px; color:#8a93a1; font-weight:700;">Deriving truth table and minimizing</div>
+    </div>
+    <div id="simplifycirc-results" style="display:none; flex-direction:column; max-height:90vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Simplified Circuit Preview</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Here's the minimal equivalent network. Inputs and outputs stay in place. Keep it, or cancel to restore the original.</div>
+      </div>
+      <div id="simplifycirc-results-body" style="padding:14px 22px 4px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid #e3e7ec;">
+        <button id="simplifycirc-results-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel &amp; Restore Original</button>
+        <button id="simplifycirc-results-confirm" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Confirm Simplified Circuit</button>
+      </div>
+    </div>
+    <div id="simplifycirc-error" style="display:none; flex-direction:column; gap:14px; padding:30px 22px;">
+      <div style="font-weight:800; font-size:14px; color:#c0392b;">Can't simplify this circuit</div>
+      <div id="simplifycirc-error-msg" style="font-size:12.5px; color:#51607a; line-height:1.6;"></div>
+      <div style="display:flex; justify-content:flex-end;">
+        <button id="simplifycirc-error-close" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     SIMPLIFY BOOLEAN EXPRESSION
+     Standalone algebra tool: type any Boolean expression (however long or
+     redundant) and get back the simplest equivalent form. Reuses the same
+     expression keypad as "Boolean Expression to Circuit" for entry, then
+     brute-forces a truth table straight from the parsed expression (no
+     circuit needed) and reduces it with the same Quine–McCluskey engine
+     the K-map tool uses (via App._ceAnalyzeOutput). Results offer Copy
+     and "Build circuit from this", which hands the simplified expression
+     straight to the Boolean Expression to Circuit tool. Same 4-state
+     layout (form / loading / results / error) as the other Bool-expr
+     dialogs. -->
+<div id="simplify-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="simplify-dialog" style="background:#fff; border-radius:14px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:480px; max-width:94vw; max-height:92vh; display:flex; flex-direction:column; overflow:hidden;">
+    <div id="simp-form" style="display:flex; flex-direction:column; max-height:92vh; overflow-y:auto;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Simplify Boolean Expression</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Type or tap out any expression — Simplify reduces it to the smallest equivalent form.</div>
+      </div>
+
+      <!-- Expression input -->
+      <div style="padding:14px 22px 0;">
+        <input type="text" id="simp-input" class="boolexpr-screen" maxlength="300" placeholder="A.B + A.B'.C + A.C'" spellcheck="false" autocomplete="off">
+      </div>
+      <div id="simp-error" style="display:none; margin:10px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5;"></div>
+
+      <!-- Centered collapse toggle, sitting between the input and the keypad -->
+      <div style="display:flex; justify-content:center; margin:12px 0 -2px;">
+        <button id="simp-toggle-pad" class="boolexpr-toggle-arrow" title="Hide/show keypad">
+          <span id="simp-toggle-label">Hide keypad</span>
+          <svg id="simp-toggle-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.15s;"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+
+      <!-- Keypad: same plain light card as the Boolean Expression to Circuit tool -->
+      <div id="simp-pad" style="padding:12px 22px 4px;">
+        <div class="boolexpr-calc-body">
+          <div id="simp-pad-fn" class="boolexpr-calc-row"></div>
+          <div id="simp-pad-letters" class="boolexpr-calc-row" style="margin-bottom:10px;"></div>
+          <div id="simp-pad-bottom" class="boolexpr-calc-row"></div>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px;">
+        <button id="simp-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="simp-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Simplify</button>
+      </div>
+    </div>
+
+    <div id="simp-loading" style="display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:46px 22px;">
+      <div style="width:34px; height:34px; border-radius:50%; border:3.5px solid #d8e6f7; border-top-color:#1e5fcc; animation: tt-spin 0.8s linear infinite;"></div>
+      <div style="font-weight:800; font-size:13.5px; color:#0f2a4a;">Simplifying…</div>
+      <div style="font-size:11.5px; color:#8a93a1; font-weight:700;">Building truth table and minimizing</div>
+    </div>
+
+    <div id="simp-results" style="display:none; flex-direction:column; max-height:92vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Simplified</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Tap Copy for the equation, or Build to plot it as a circuit.</div>
+      </div>
+      <div id="simp-results-body" style="padding:14px 22px 4px; overflow-y:auto; flex:1;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid #e3e7ec;">
+        <button id="simp-results-back" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Back</button>
+        <button id="simp-results-close" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Close</button>
+      </div>
+    </div>
+
+    <div id="simp-error-panel" style="display:none; flex-direction:column; gap:14px; padding:30px 22px;">
+      <div style="font-weight:800; font-size:14px; color:#c0392b;">Can't simplify that</div>
+      <div id="simp-error-panel-msg" style="font-size:12.5px; color:#51607a; line-height:1.6;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button id="simp-error-back" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Back</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     SOP <-> POS CONVERTER
+     Takes any typed expression (already SOP, already POS, or neither) and
+     shows both its Sum-of-Products and Product-of-Sums forms side by
+     side — canonical (minterm/maxterm) and minimized for each — using the
+     exact same parse -> brute-force truth table -> KMapEngine pipeline as
+     the Simplify Boolean Expression tool. Same 4-state layout (form /
+     loading / results / error) and keypad as that tool.
+     ===================================================================== -->
+<div id="sop-pos-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="sop-pos-dialog" style="background:#fff; border-radius:14px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:480px; max-width:94vw; max-height:92vh; display:flex; flex-direction:column; overflow:hidden;">
+    <div id="sp-form" style="display:flex; flex-direction:column; max-height:92vh; overflow-y:auto;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">SOP ⇄ POS Converter</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Type or tap out any expression — get its Sum-of-Products and Product-of-Sums forms, canonical and minimized.</div>
+      </div>
+
+      <!-- Expression input -->
+      <div style="padding:14px 22px 0;">
+        <input type="text" id="sp-input" class="boolexpr-screen" maxlength="300" placeholder="A.B + A.B'.C + A.C'" spellcheck="false" autocomplete="off">
+      </div>
+      <div id="sp-error" style="display:none; margin:10px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5;"></div>
+
+      <!-- Centered collapse toggle, sitting between the input and the keypad -->
+      <div style="display:flex; justify-content:center; margin:12px 0 -2px;">
+        <button id="sp-toggle-pad" class="boolexpr-toggle-arrow" title="Hide/show keypad">
+          <span id="sp-toggle-label">Hide keypad</span>
+          <svg id="sp-toggle-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.15s;"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+
+      <!-- Keypad: same plain light card as the other Bool-expr tools -->
+      <div id="sp-pad" style="padding:12px 22px 4px;">
+        <div class="boolexpr-calc-body">
+          <div id="sp-pad-fn" class="boolexpr-calc-row"></div>
+          <div id="sp-pad-letters" class="boolexpr-calc-row" style="margin-bottom:10px;"></div>
+          <div id="sp-pad-bottom" class="boolexpr-calc-row"></div>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px;">
+        <button id="sp-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="sp-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Convert</button>
+      </div>
+    </div>
+
+    <div id="sp-loading" style="display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:46px 22px;">
+      <div style="width:34px; height:34px; border-radius:50%; border:3.5px solid #d8e6f7; border-top-color:#1e5fcc; animation: tt-spin 0.8s linear infinite;"></div>
+      <div style="font-weight:800; font-size:13.5px; color:#0f2a4a;">Converting…</div>
+      <div style="font-size:11.5px; color:#8a93a1; font-weight:700;">Building truth table and minimizing</div>
+    </div>
+
+    <div id="sp-results" style="display:none; flex-direction:column; max-height:92vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">SOP &amp; POS forms</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Tap Copy for either equation, or Build to plot it as a circuit.</div>
+      </div>
+      <div id="sp-results-body" style="padding:14px 22px 4px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid #e3e7ec;">
+        <button id="sp-results-back" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Back</button>
+        <button id="sp-results-close" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Close</button>
+      </div>
+    </div>
+
+    <div id="sp-error-panel" style="display:none; flex-direction:column; gap:14px; padding:30px 22px;">
+      <div style="font-weight:800; font-size:14px; color:#c0392b;">Can't convert that</div>
+      <div id="sp-error-panel-msg" style="font-size:12.5px; color:#51607a; line-height:1.6;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button id="sp-error-back" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Back</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     K-MAP TO CIRCUIT
+     The reverse of the circuit-derived K-map tool: pick a variable count
+     and their names, fill in an empty Karnaugh map by hand (tap a cell to
+     cycle 0 → 1 → X), and Generate builds the simplest matching circuit
+     via the same KMapEngine.minimize + _buildCircuitFromBoolExpr pipeline
+     every other Bool-expr tool uses. Two states: setup (pick vars) and
+     grid (fill in values), each with its own inline error banner rather
+     than a separate error screen, since both are quick to fix in place.
+     ===================================================================== -->
+<div id="km2c-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="km2c-dialog" style="background:#fff; border-radius:14px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:540px; max-width:94vw; max-height:92vh; display:flex; flex-direction:column; overflow:hidden;">
+    <div id="km2c-setup" style="display:flex; flex-direction:column; max-height:92vh; overflow-y:auto;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">K-map to Circuit</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Pick your input variables, fill in the map, and this builds the simplest matching circuit.</div>
+      </div>
+      <div style="padding:14px 22px 0; display:flex; align-items:center; gap:10px;">
+        <div class="tt-field-label" style="margin-bottom:0; flex:none;">Variables</div>
+        <select id="km2c-varcount" style="padding:7px 10px; border-radius:7px; border:1.5px solid #d3d9e2; font-weight:700; font-size:13px; color:#16233a;">
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+        </select>
+      </div>
+      <div style="padding:14px 22px 0;">
+        <div class="tt-field-label">Names</div>
+        <div id="km2c-varnames" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+      </div>
+      <div id="km2c-setup-error" style="display:none; margin:14px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5;"></div>
+      <div style="padding:16px 22px 4px; display:flex; align-items:center; gap:10px;">
+        <div class="tt-field-label" style="margin-bottom:0; flex:none;">Output</div>
+        <div style="display:flex; gap:8px;">
+          <label class="boolexpr-output-choice">
+            <input type="radio" name="km2c-output-type" value="LED" checked> LED
+          </label>
+          <label class="boolexpr-output-choice">
+            <input type="radio" name="km2c-output-type" value="PROBE"> Probe (shows 0/1)
+          </label>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px;">
+        <button id="km2c-setup-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="km2c-setup-next" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Next</button>
+      </div>
+    </div>
+
+    <div id="km2c-grid-panel" style="display:none; flex-direction:column; max-height:92vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Fill in the K-map</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Tap a cell to cycle 0 → 1 → X (don't care) → 0.</div>
+      </div>
+      <div id="km2c-grid-wrap" style="padding:14px 22px 0; overflow:auto; display:flex; justify-content:center;"></div>
+      <div style="padding:14px 22px 0; text-align:center;">
+        <div class="tt-field-label" style="margin-bottom:2px;">Simplified expression</div>
+        <div id="km2c-preview" style="font-family:'Courier New',monospace; font-size:14px; font-weight:800; color:#0a8f8c; min-height:18px;"></div>
+      </div>
+      <div id="km2c-grid-error" style="display:none; margin:12px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px;">
+        <button id="km2c-grid-back" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Back</button>
+        <button id="km2c-grid-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Generate</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     TRUTH TABLE TO CIRCUIT
+     Same idea as K-map to Circuit, but entered as a plain row list instead
+     of a 2D grid — supports more variables (up to 8) since a truth table
+     doesn't need a rectangular layout. Reuses the identical minimize +
+     _buildCircuitFromBoolExpr pipeline.
+     ===================================================================== -->
+<div id="tt2c-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="tt2c-dialog" style="background:#fff; border-radius:14px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:520px; max-width:94vw; max-height:92vh; display:flex; flex-direction:column; overflow:hidden;">
+    <div id="tt2c-setup" style="display:flex; flex-direction:column; max-height:92vh; overflow-y:auto;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Truth Table to Circuit</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Pick your input variables, set each row's output, and this builds the simplest matching circuit.</div>
+      </div>
+      <div style="padding:14px 22px 0; display:flex; align-items:center; gap:10px;">
+        <div class="tt-field-label" style="margin-bottom:0; flex:none;">Variables</div>
+        <select id="tt2c-varcount" style="padding:7px 10px; border-radius:7px; border:1.5px solid #d3d9e2; font-weight:700; font-size:13px; color:#16233a;">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+        </select>
+      </div>
+      <div style="padding:14px 22px 0;">
+        <div class="tt-field-label">Names</div>
+        <div id="tt2c-varnames" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+      </div>
+      <div id="tt2c-setup-error" style="display:none; margin:14px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5;"></div>
+      <div style="padding:16px 22px 4px; display:flex; align-items:center; gap:10px;">
+        <div class="tt-field-label" style="margin-bottom:0; flex:none;">Output</div>
+        <div style="display:flex; gap:8px;">
+          <label class="boolexpr-output-choice">
+            <input type="radio" name="tt2c-output-type" value="LED" checked> LED
+          </label>
+          <label class="boolexpr-output-choice">
+            <input type="radio" name="tt2c-output-type" value="PROBE"> Probe (shows 0/1)
+          </label>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px;">
+        <button id="tt2c-setup-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="tt2c-setup-next" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Next</button>
+      </div>
+    </div>
+
+    <div id="tt2c-table-panel" style="display:none; flex-direction:column; max-height:92vh;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">Fill in the truth table</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Tap a row's output to cycle 0 → 1 → X (don't care) → 0.</div>
+      </div>
+      <div id="tt2c-table-wrap" style="padding:14px 22px 0; overflow:auto; flex:1; display:flex; justify-content:center;"></div>
+      <div style="padding:14px 22px 0; text-align:center;">
+        <div class="tt-field-label" style="margin-bottom:2px;">Simplified expression</div>
+        <div id="tt2c-preview" style="font-family:'Courier New',monospace; font-size:14px; font-weight:800; color:#0a8f8c; min-height:18px;"></div>
+      </div>
+      <div id="tt2c-table-error" style="display:none; margin:12px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px;">
+        <button id="tt2c-table-back" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Back</button>
+        <button id="tt2c-table-generate" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Generate</button>
+      </div>
+    </div>
+  </div>
+</div>
+<link rel="stylesheet" href="kmap-truthtable-converter-styles.css">
+
+<!-- =====================================================================
+     K-MAP <-> TRUTH TABLE
+     A live two-way view of one shared `values` array (indexed by input
+     mask, same 0/1/X convention as every other Bool-logic tool): the
+     K-map grid (KMapEngine.buildGrid) on top and the row-list truth table
+     (same layout as Truth-Table-to-Circuit) below it, both re-rendered
+     from the same state on every click — so tapping a cell in either one
+     immediately updates the other, with no explicit "convert" step.
+     Variable count is capped at 2-6 (same as K-map to Circuit) since a
+     K-map grid layout needs that range. Also offers Build Circuit as a
+     bonus, reusing the shared _ceAnalyzeOutput + _buildCircuitFromBoolExpr
+     pipeline every other Bool-expr tool uses.
+     ===================================================================== -->
+<div id="kmtt-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,29,51,0.55); z-index:260; align-items:center; justify-content:center;">
+  <div id="kmtt-dialog" style="background:#fff; border-radius:14px; box-shadow:0 10px 40px rgba(10,29,51,0.28); width:560px; height:600px; min-width:480px; min-height:380px; max-width:96vw; max-height:94vh; display:flex; flex-direction:column; overflow:hidden; resize:both;">
+    <div id="kmtt-setup" style="display:flex; flex-direction:column; height:100%; overflow-y:auto;">
+      <div style="padding:20px 22px 4px;">
+        <div style="font-weight:800; font-size:15px; color:#0f2a4a;">K-map ⇄ Truth Table</div>
+        <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Pick your input variables — fill in either the map or the table and the other one updates to match.</div>
+      </div>
+      <div style="padding:14px 22px 0; display:flex; align-items:center; gap:10px;">
+        <div class="tt-field-label" style="margin-bottom:0; flex:none;">Variables</div>
+        <select id="kmtt-varcount" style="padding:7px 10px; border-radius:7px; border:1.5px solid #d3d9e2; font-weight:700; font-size:13px; color:#16233a;">
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+        </select>
+      </div>
+      <div style="padding:14px 22px 0;">
+        <div class="tt-field-label">Names</div>
+        <div id="kmtt-varnames" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+      </div>
+      <div id="kmtt-setup-error" style="display:none; margin:14px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5;"></div>
+      <div style="padding:16px 22px 4px; display:flex; align-items:center; gap:10px;">
+        <div class="tt-field-label" style="margin-bottom:0; flex:none;">Output (if building a circuit)</div>
+        <div style="display:flex; gap:8px;">
+          <label class="boolexpr-output-choice">
+            <input type="radio" name="kmtt-output-type" value="LED" checked> LED
+          </label>
+          <label class="boolexpr-output-choice">
+            <input type="radio" name="kmtt-output-type" value="PROBE"> Probe (shows 0/1)
+          </label>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px;">
+        <button id="kmtt-setup-cancel" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Cancel</button>
+        <button id="kmtt-setup-next" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Next</button>
+      </div>
+    </div>
+
+    <div id="kmtt-view-panel" style="display:none; flex-direction:column; height:100%;">
+      <div style="padding:20px 22px 4px; display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+        <div>
+          <div style="font-weight:800; font-size:15px; color:#0f2a4a;">K-map ⇄ Truth Table</div>
+          <div style="font-size:12px; color:#51607a; margin-top:4px; line-height:1.5;">Tap any cell in either view to cycle 0 → 1 → X — the other view updates instantly.</div>
+        </div>
+        <button id="kmtt-expand-toggle" title="Expand/collapse this window" style="flex:none; padding:6px 10px; border-radius:7px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:12px; color:#51607a; cursor:pointer; white-space:nowrap;">⤢ Expand</button>
+      </div>
+      <div style="padding:10px 22px 0; flex:1; min-height:0; display:flex; gap:18px; overflow:auto;">
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <div class="kmtt-section-label">K-map</div>
+          <div id="kmtt-grid-wrap" style="display:flex; justify-content:center; overflow:auto;"></div>
+        </div>
+        <div style="width:1px; background:#e3e7ec; flex:none;"></div>
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden;">
+          <div class="kmtt-section-label">Truth Table</div>
+          <div id="kmtt-table-wrap" style="display:flex; justify-content:center; overflow:auto;"></div>
+        </div>
+      </div>
+      <div style="padding:10px 22px 0; text-align:center; flex:none;">
+        <div class="tt-field-label" style="margin-bottom:2px;">Simplified expression</div>
+        <div id="kmtt-preview" style="font-family:'Courier New',monospace; font-size:14px; font-weight:800; color:#0a8f8c; min-height:18px;"></div>
+      </div>
+      <div id="kmtt-view-error" style="display:none; margin:12px 22px 0; padding:9px 12px; border-radius:8px; background:#fdeceb; border:1px solid #f3c6c1; font-size:12px; font-weight:700; color:#c0392b; line-height:1.5; flex:none;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 20px; margin-top:6px; flex:none;">
+        <button id="kmtt-view-back" style="padding:9px 18px; border-radius:8px; border:1.5px solid #e3e7ec; background:#fff; font-weight:700; font-size:13px; color:#51607a; cursor:pointer;">Back</button>
+        <button id="kmtt-view-build" style="padding:9px 20px; border-radius:8px; border:none; background:#14c8c4; font-weight:800; font-size:13px; color:#0a1d33; cursor:pointer;">Build Circuit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- K-map floating panel template — same draggable/pinned canvas-element
+     pattern as the Truth Table panel. Cloned per generated K-map. -->
+<div id="km-panel" class="tt-panel km-panel-el" style="display:none; position:fixed; z-index:25; background:#fff; border-radius:12px; box-shadow:var(--shadow-lg); border:1px solid var(--c-gray); overflow:visible; min-width:240px; max-width:90vw; flex-direction:column; pointer-events:auto;">
+  <div id="km-panel-header" style="background:linear-gradient(180deg, #0c2340 0%, #091929 100%); color:#f5f8fc; padding:10px 8px; display:flex; align-items:center; justify-content:space-between; gap:10px; user-select:none; flex:none;">
+    <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+      <div id="km-panel-drag-handle" title="Drag to move" style="cursor:grab; width:22px; height:26px; border-radius:5px; display:flex; align-items:center; justify-content:center; flex:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.85;"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
+      </div>
+      <div style="font-weight:800; font-size:12.5px; letter-spacing:0.02em; white-space:nowrap;">K-map</div>
+      <div id="km-panel-subtitle" style="font-size:10.5px; font-weight:700; color:#7ec8ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:4px; flex:none;">
+      <!-- FUTURE FEATURE: Export Report button — will trigger a PDF report of the full
+           circuit analysis (K-map, expression, prime implicants) via the Export section.
+           Hidden for now; do not delete. -->
+      <button id="km-panel-export" title="Export circuit analysis report as PDF" style="display:none; padding:0 8px; height:24px; border-radius:6px; border:none; background:rgba(255,255,255,0.1); color:#f5f8fc; cursor:pointer; font-size:10.5px; font-weight:700;">Export Report</button>
+      <button id="km-panel-play" title="Play through all combinations" style="width:26px; height:26px; border-radius:6px; border:none; background:rgba(255,255,255,0.1); color:#f5f8fc; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+        <svg id="km-play-icon" width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.7C3 1 3.8 0.6 4.4 1L14 7.1C14.5 7.4 14.5 8.1 14 8.4L4.4 14.5C3.8 14.9 3 14.5 3 13.8V1.7Z"/></svg>
+      </button>
+      <button id="km-panel-props" title="Delete" style="width:26px; height:26px; border-radius:6px; border:none; background:rgba(255,255,255,0.1); color:#f5f8fc; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+      </button>
+    </div>
+  </div>
+  <!-- K-map grid (scrollable) -->
+  <div id="km-panel-grid" style="overflow:visible; flex:none; padding:10px 12px 0 12px; user-select:none; -webkit-user-select:none;"></div>
+  <!-- Simplified expression row -->
+  <div id="km-panel-expr" style="padding:8px 14px 6px 14px; font-family:'Courier New',monospace; font-size:13px; font-weight:800; color:#0a8f8c; border-top:1px solid #e3e7ec; user-select:none; -webkit-user-select:none; flex:none;"></div>
+  <!-- Group legend: one row per prime implicant -->
+  <div id="km-panel-legend" style="padding:4px 14px 10px 14px; display:flex; flex-wrap:wrap; gap:3px 14px; border-top:1px solid #e3e7ec; user-select:none; -webkit-user-select:none; flex:none; overflow:visible;"></div>
+</div>
+
+<!-- Right-click context menu for the K-map panel -->
+<div id="km-panel-ctxmenu" style="display:none; position:fixed; z-index:290; background:#fff; border-radius:8px; box-shadow:var(--shadow-lg); border:1px solid var(--c-gray); min-width:150px; padding:4px; font-family:var(--font-ui);">
+  <div class="ctx-item" id="km-ctx-delete" style="padding:8px 12px; font-size:12.5px; font-weight:700; color:#c0392b; cursor:pointer; border-radius:6px;">Delete K-map</div>
+</div>
+
+
+<script src="utils-constants.js"></script>
+<script src="gate-library.js"></script>
+<script src="boolean-expression-gate-shapes.js"></script>
+<script src="export-engine.js"></script>
+<script src="circuit-data-model.js"></script>
+<script src="simulation-engine.js"></script>
+<script src="history-manager.js"></script>
+<script src="persistence-manager.js"></script>
+<script src="wire-router.js"></script>
+<script src="canvas-renderer.js"></script>
+<script src="component-view.js"></script>
+<script src="selection-manager.js"></script>
+<script src="palette-config.js"></script>
+<script src="kmap-engine.js"></script>
+<script src="app-controller.js"></script>
+<script src="export-preview.js"></script>
+<script src="app-boot.js"></script>
+</body>
+</html>

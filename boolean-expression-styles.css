@@ -1,0 +1,63 @@
+  /* Plain, normal text field for the expression — matches the rest of the app's inputs */
+  .boolexpr-screen{
+    width:100%; box-sizing:border-box; padding:12px 14px; border-radius:8px;
+    background:#fff; color:#16233a; border:1.5px solid #d3d9e2;
+    font-family:'Courier New',monospace; font-size:16px; font-weight:700; letter-spacing:0.2px;
+  }
+  .boolexpr-screen::placeholder{ color:#a7b0bf; font-weight:600; }
+  .boolexpr-screen:focus{ outline:none; border-color:#1e5fcc; box-shadow:0 0 0 3px rgba(30,95,204,0.12); }
+
+  /* Centered pill toggle above the keypad */
+  .boolexpr-toggle-arrow{
+    display:flex; align-items:center; gap:6px; padding:5px 14px 5px 16px; border-radius:999px;
+    border:1.5px solid #e3e7ec; background:#fff; color:#51607a; font-size:10.5px; font-weight:800;
+    letter-spacing:0.05em; text-transform:uppercase; cursor:pointer; position:relative; z-index:1;
+  }
+  .boolexpr-toggle-arrow:hover{ background:#f4f6f9; border-color:#c9d3e0; }
+
+  /* Keypad card — plain light surface, no bezel/gradient */
+  .boolexpr-calc-body{
+    background:#f4f6f9;
+    border:1.5px solid #e3e7ec;
+    border-radius:12px; padding:12px;
+  }
+  .boolexpr-calc-row{ display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-bottom:6px; }
+  .boolexpr-calc-row:last-child{ margin-bottom:0; }
+
+  .boolexpr-key{
+    min-width:34px; height:34px; padding:0 8px; border-radius:8px;
+    border:1.5px solid #d8dee6; background:#fff; color:#16233a;
+    font-weight:700; font-size:13px; font-family:var(--font-ui); cursor:pointer;
+    transition: background 0.08s, border-color 0.08s, transform 0.05s;
+  }
+  .boolexpr-key:active{ transform: translateY(1px); }
+
+  .boolexpr-key-letter{ background:#fff; color:#22262e; }
+  .boolexpr-key-letter:hover{ background:#eef1f5; border-color:#c4cbd4; }
+
+  /* Gate/operator keys — the actual math symbol is the button's face; the
+     gate's name rides underneath as a small, pale-gray subtitle. */
+  .boolexpr-key-fn{
+    min-width:48px; height:44px; padding:2px 8px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+    background:#fff; border:1.5px solid #cfe0fb;
+  }
+  .boolexpr-key-fn:hover{ background:#eef4ff; border-color:#1e5fcc; }
+  .boolexpr-key-symbol{ font-size:17px; font-weight:800; color:#1e5fcc; line-height:1; font-family:'Cambria Math','Segoe UI',serif; }
+  .boolexpr-key-name{ font-size:8.5px; font-weight:700; letter-spacing:0.04em; color:#a7b0bf; line-height:1; text-transform:uppercase; }
+
+  .boolexpr-key-sym{ background:#fff; color:#51607a; }
+  .boolexpr-key-sym:hover{ background:#eef1f5; border-color:#c4cbd4; }
+
+  .boolexpr-key-digit{ background:#fff; color:#16233a; }
+  .boolexpr-key-digit:hover{ background:#eef1f5; border-color:#c4cbd4; }
+
+  .boolexpr-key-util{ background:#fdeceb; color:#c0392b; border-color:#f3c6c1; }
+  .boolexpr-key-util:hover{ background:#fbdcda; }
+
+  .boolexpr-output-choice{
+    display:flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px;
+    border:1.5px solid #e3e7ec; font-size:12px; font-weight:700; color:#16233a; cursor:pointer;
+  }
+  .boolexpr-output-choice input{ accent-color:#14c8c4; }
+  .boolexpr-output-choice:has(input:checked){ border-color:#14c8c4; background:#eafffe; }

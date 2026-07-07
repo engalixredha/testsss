@@ -1,0 +1,1394 @@
+  /* =====================================================================
+     DESIGN TOKENS
+     Color palette (per brief): White / Blue / Navy / Turquoise / Light Gray
+     ===================================================================== */
+  :root{
+    --c-white:        #ffffff;
+    --c-bg:           #f4f6f9;          /* app background, slightly off-white */
+    --c-navy:         #0f2a4a;          /* toolbars, headers, selected tool */
+    --c-navy-deep:    #0a1d33;          /* pressed/darker navy */
+    --c-blue:         #1e5fcc;          /* primary accent */
+    --c-blue-soft:    #4f7fe0;
+    --c-teal:         #14c8c4;          /* active controls / highlights / selection */
+    --c-teal-soft:    rgba(20,200,196,0.18);
+    --c-amber:        #f5a623;          /* Convert-to-Universal mode accent */
+    --c-amber-soft:   rgba(245,166,35,0.18);
+    --c-gray:         #e3e7ec;          /* borders, secondary backgrounds */
+    --c-gray-mid:     #c4cbd4;
+    --c-gray-dark:    #8a93a1;
+    --c-text:         #16233a;
+    --c-text-soft:    #51607a;
+    --c-text-invert:  #f5f8fc;
+
+    --wire-high:      #1fae5c;          /* HIGH = green */
+    --wire-low:       #e0364a;          /* LOW = red */
+    --wire-float:     #e0364a;          /* floating/undefined = red */
+
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 12px;
+
+    --shadow-sm: 0 1px 2px rgba(15,42,74,0.08), 0 1px 1px rgba(15,42,74,0.04);
+    --shadow-md: 0 4px 14px rgba(15,42,74,0.12), 0 2px 4px rgba(15,42,74,0.06);
+    --shadow-lg: 0 10px 30px rgba(15,42,74,0.18), 0 4px 10px rgba(15,42,74,0.08);
+
+    --font-ui: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  *{ box-sizing: border-box; }
+  html, body{
+    margin:0; padding:0; height:100%; height:100dvh; width:100%;
+    overflow:hidden;
+    font-family: var(--font-ui);
+    color: var(--c-text);
+    background: var(--c-bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  body{ font-weight:600; } /* bold-by-default per typography spec */
+
+  button, input, select{ font-family: var(--font-ui); }
+
+  /* Bold, sharp, modern typographic baseline used everywhere */
+  .ui-bold     { font-weight:800; letter-spacing:0.02em; }
+  .ui-semibold { font-weight:700; letter-spacing:0.01em; }
+  .ui-label    { font-weight:700; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color: var(--c-text-soft); }
+
+  /* =====================================================================
+     APP SHELL LAYOUT
+     ===================================================================== */
+  #app{
+    display:grid;
+    grid-template-rows: 56px 0px 1fr 34px 28px;
+    grid-template-columns: 1fr;
+    height:100vh; height:100dvh; width:100vw; width:100dvw;
+    transition: grid-template-rows .15s ease;
+  }
+  #app.elements-open, #app.kits-open{
+    grid-template-rows: 56px 108px 1fr 34px 28px;
+  }
+  /* Design tabs bar auto-hides while the workspace is idle/being edited —
+     collapses its row to 0 — and slides back in when the cursor hovers the
+     bottom edge of the window (see _dtBindAutoHide). Written as combined
+     selectors (rather than a CSS variable) so it composes correctly with
+     the elements/kits-open row heights above. */
+  #app.tabs-collapsed{
+    grid-template-rows: 56px 0px 1fr 0px 28px;
+  }
+  #app.tabs-collapsed.elements-open, #app.tabs-collapsed.kits-open{
+    grid-template-rows: 56px 108px 1fr 0px 28px;
+  }
+
+  /* ---------- Top Title / Menu Bar ---------- */
+  #top-bar{
+    grid-row:1; display:flex; align-items:stretch; justify-content:space-between;
+    background: linear-gradient(180deg, var(--c-navy) 0%, var(--c-navy-deep) 100%);
+    color: var(--c-text-invert);
+    padding: 0 16px;
+    box-shadow: var(--shadow-md);
+    z-index:30;
+  }
+
+  /* Menu actions: square, edge-to-edge connected buttons (CAD-toolbar
+     style) instead of separated rounded pills. Each button shares its
+     border with its neighbor rather than having its own all-round border,
+     so the group reads as one continuous strip. Buttons stretch to fill
+     the full height of the top bar — no empty band above/below them. */
+  #menu-actions{ display:flex; align-items:stretch; }
+  .menu-dropdown{ display:flex; }
+  .top-btn{
+    display:flex; align-items:center; gap:6px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-top-width:0; border-bottom-width:0; border-left-width: 0;
+    color: var(--c-text-invert);
+    padding: 0 14px; border-radius:0;
+    font-weight:700; font-size:12.5px; letter-spacing:0.02em;
+    cursor:pointer; transition: background .12s ease, color .12s ease;
+    white-space:nowrap;
+    height:100%;
+  }
+  #menu-actions .menu-dropdown:first-child .top-btn{ border-left-width:1px; }
+  .top-btn:hover{ background: rgba(20,200,196,0.22); color: var(--c-teal); }
+  .top-btn.primary{ background: var(--c-teal); border-color: var(--c-teal); color: var(--c-navy-deep); }
+  .top-btn.primary:hover{ background:#23dad6; }
+  .top-btn:disabled{ opacity:0.35; cursor:not-allowed; }
+  #file-input-hidden{ display:none; }
+
+  /* Undo/Redo: small square icon buttons, also connected edge-to-edge,
+     stretching to the bar's full height for the same reason. */
+  #history-actions{ display:flex; align-items:stretch; }
+  .icon-btn{
+    display:flex; align-items:center; justify-content:center;
+    width:44px; height:100%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-top-width:0; border-bottom-width:0; border-left-width:0;
+    color: var(--c-text-invert);
+    cursor:pointer; transition: background .12s ease, color .12s ease;
+  }
+  #history-actions .icon-btn:first-child{ border-left-width:1px; }
+  .icon-btn svg{ width:17px; height:17px; display:block; }
+  .icon-btn:hover{ background: rgba(20,200,196,0.22); color: var(--c-teal); }
+  .icon-btn:disabled{ opacity:0.3; cursor:not-allowed; }
+  .icon-btn:disabled:hover{ background: rgba(255,255,255,0.06); color: var(--c-text-invert); }
+
+  /* ---------- Top Bar Dropdown Menus (Files / Elements) ---------- */
+  .menu-dropdown{ position:relative; }
+  .menu-dropdown .top-btn{ position:relative; }
+  /* CSS-drawn triangle instead of a Unicode glyph (▾) — glyph coverage for
+     that character varies across fonts/OSes and can render as a blank box
+     in some Chrome/font configurations. A border-triangle always renders. */
+  .menu-dropdown .top-btn::after{
+    content:""; width:0; height:0; margin-left:6px;
+    border-left:4px solid transparent; border-right:4px solid transparent;
+    border-top:5px solid currentColor; opacity:0.75;
+  }
+  .menu-dropdown.open .top-btn{
+    background: rgba(20,200,196,0.22); color: var(--c-teal);
+  }
+
+  /* Elements toggle isn't a floating dropdown (its content opens as the
+     full-width #elements-bar row below instead), but it gets the same
+     caret + active-highlight treatment so it reads consistently with Files. */
+  #btn-elements-toggle{ position:relative; }
+  #btn-elements-toggle::after{
+    content:""; width:0; height:0; margin-left:6px;
+    border-left:4px solid transparent; border-right:4px solid transparent;
+    border-top:5px solid currentColor; opacity:0.75;
+    transition: transform .12s ease;
+  }
+  #btn-elements-toggle.active{ background: rgba(20,200,196,0.22); color: var(--c-teal); }
+  #btn-elements-toggle.active::after{ transform: rotate(180deg); }
+
+  /* Kits toggle: same full-width-strip behavior as Elements, so it gets
+     the identical caret + active-state treatment (not a floating dropdown). */
+  #btn-kits-toggle{ position:relative; }
+  #btn-kits-toggle::after{
+    content:""; width:0; height:0; margin-left:6px;
+    border-left:4px solid transparent; border-right:4px solid transparent;
+    border-top:5px solid currentColor; opacity:0.75;
+    transition: transform .12s ease;
+  }
+  #btn-kits-toggle.active{ background: rgba(20,200,196,0.22); color: var(--c-teal); }
+  #btn-kits-toggle.active::after{ transform: rotate(180deg); }
+  .dropdown-panel{
+    position:absolute; top: 100%; left:0; margin-top:1px;
+    background: var(--c-white); color: var(--c-text);
+    border:1px solid var(--c-gray); border-radius:0;
+    box-shadow: var(--shadow-lg);
+    padding:4px; min-width:190px;
+    display:none; z-index:60;
+  }
+  .menu-dropdown.open .dropdown-panel{ display:block; }
+  .dropdown-item{
+    display:flex; align-items:center; justify-content:space-between; gap:24px;
+    padding:9px 10px; border-radius:0;
+    font-weight:700; font-size:12.5px; color: var(--c-text);
+    cursor:pointer; white-space:nowrap;
+    transition: background .1s ease, color .1s ease;
+  }
+  .dropdown-shortcut{
+    font-weight:600; font-size:11px; color: var(--c-gray-dark);
+    letter-spacing:0.02em; flex-shrink:0;
+  }
+  .dropdown-check{ font-size:13px; color: var(--c-teal); }
+  .dropdown-item:hover .dropdown-shortcut{ color: var(--c-navy); }
+  .dropdown-item:hover .dropdown-check{ color: var(--c-teal); }
+  .dropdown-item:hover{ background: var(--c-teal-soft); color: var(--c-navy); }
+  #view-zoom-readout-row:hover{ background: none; color: inherit; }
+  #view-zoom-readout-row:hover .dropdown-shortcut{ color: var(--c-gray-dark); }
+  .view-zoom-row:hover{ background: none; color: inherit; }
+  .view-zoom-controls{ display:flex; align-items:center; gap:6px; }
+  .view-zoom-controls #view-zoom-readout{ min-width:38px; text-align:center; font-weight:700; font-size:12px; color: var(--c-navy); }
+  .view-zoom-btn{
+    width:20px; height:20px; border-radius:4px; border:1px solid var(--c-gray);
+    background: var(--c-white); color: var(--c-navy); font-size:14px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0;
+    font-family:inherit;
+  }
+  .view-zoom-btn:hover{ background: var(--c-teal-soft); border-color: var(--c-teal); }
+  .view-zoom-btn:active{ background: var(--c-teal); }
+  .dropdown-item.danger:hover{ background: rgba(224,54,74,0.14); color:#b8253a; }
+  .dropdown-sep{ height:1px; background: var(--c-gray); margin:5px 4px; }
+
+  /* ---------- Nested submenu (e.g. View ▸ Canvas Size ▸ sizes) ----------
+     Opens to the right of its parent dropdown-item, on hover (desktop)
+     or on click/tap (touch — toggled via JS .submenu-open class), using
+     the exact same visual chrome as a top-level dropdown-panel. */
+  .dropdown-item.has-submenu{ position:relative; }
+  .dropdown-item.has-submenu::after{
+    content:""; width:0; height:0; margin-left:10px; flex-shrink:0;
+    border-top:4px solid transparent; border-bottom:4px solid transparent;
+    border-left:5px solid currentColor; opacity:0.6;
+  }
+  .dropdown-submenu{
+    position:absolute; top:-5px; left:100%; margin-left:1px;
+    background: var(--c-white); color: var(--c-text);
+    border:1px solid var(--c-gray); border-radius:0;
+    box-shadow: var(--shadow-lg);
+    padding:4px; min-width:230px;
+    display:none; z-index:70;
+  }
+  .dropdown-item.has-submenu:hover > .dropdown-submenu,
+  .dropdown-item.has-submenu.submenu-open > .dropdown-submenu{ display:block; }
+  .dropdown-submenu .dropdown-item{ gap:14px; }
+  .csi-label{ display:flex; flex-direction:column; gap:2px; }
+  .csi-dims{ font-size:10.5px; font-weight:600; color: var(--c-gray-dark); }
+  .dropdown-item:hover .csi-dims{ color: var(--c-navy); }
+  .csi-check{ width:14px; text-align:center; flex-shrink:0; }
+
+  /* ---------- Elements Bar: full-width horizontal strip of chips ----------
+     Row 2 of #app's grid, 0px tall by default; #app.elements-open expands
+     it. overflow:hidden on the row itself means content is simply clipped
+     while collapsed, so no separate "display:none" toggling is needed and
+     the height transition can animate smoothly. */
+  #elements-bar{
+    grid-row:2; display:flex; align-items:flex-start;
+    background: var(--c-white);
+    border-bottom: 1px solid var(--c-gray);
+    overflow-y:auto; overflow-x:hidden;
+    flex-wrap:wrap;
+    padding: 6px 10px;
+    gap: 0;
+  }
+  /* Kits bar mirrors elements-bar exactly: same grid row, same strip
+     treatment. Only one of the two is ever visually present at a time
+     (toggling one closes the other), so they safely share row 2. */
+  #kits-bar{
+    grid-row:2; display:flex; align-items:flex-start;
+    background: var(--c-white);
+    border-bottom: 1px solid var(--c-gray);
+    overflow-y:auto; overflow-x:hidden;
+    flex-wrap:wrap;
+    padding: 6px 10px;
+    gap: 0;
+  }
+  /* Slim scrollbar to match #elements-rail's treatment, so extra chip
+     rows scroll within the fixed 108px strip instead of being clipped
+     when they wrap on narrow viewports. */
+  #elements-bar::-webkit-scrollbar, #kits-bar::-webkit-scrollbar{ width:5px; }
+  #elements-bar::-webkit-scrollbar-thumb, #kits-bar::-webkit-scrollbar-thumb{ background: var(--c-gray); border-radius:3px; }
+  #app:not(.kits-open) #kits-bar{ display:none; }
+  #app:not(.elements-open) #elements-bar{ display:none; }
+  .elements-bar-group{
+    display:flex; flex-wrap:wrap; align-items:flex-start; gap:4px;
+    flex:0 0 auto; padding: 0 8px 0 0;
+  }
+  .elements-bar-label{
+    width:100%; font-weight:800; font-size:9px; letter-spacing:0.08em; text-transform:uppercase;
+    color: var(--c-text-soft); padding: 0 2px 3px; flex:0 0 100%;
+    display:none; /* labels replaced by section dividers */
+  }
+  .elements-bar-section{
+    display:flex; flex-direction:column; align-items:flex-start; gap:0;
+    border-right:1px solid var(--c-gray); padding: 0 10px 0 4px; margin-right:4px;
+  }
+  .elements-bar-section-label{
+    font-weight:800; font-size:9px; letter-spacing:0.08em; text-transform:uppercase;
+    color: var(--c-text-soft); padding: 0 2px 4px; line-height:1;
+  }
+  .elements-bar-chips{
+    display:flex; flex-wrap:wrap; gap:4px;
+  }
+  .elements-bar-sep{ display:none; }
+  .element-chip, .kit-chip{
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding: 6px 6px 5px;
+    border: 1.5px solid #d8e0ea;
+    border-radius: 10px;
+    background: linear-gradient(160deg, #ffffff 0%, #f3f6fb 100%);
+    cursor: grab;
+    font-weight:700; font-size:10px; color: var(--c-text-soft);
+    box-shadow: 0 1px 4px rgba(15,42,74,0.07), inset 0 1px 0 rgba(255,255,255,0.9);
+    transition: background .12s ease, color .12s ease, border-color .12s ease,
+                box-shadow .12s ease, transform .1s ease;
+    user-select:none; white-space:nowrap; width:54px;
+  }
+  .element-chip:hover, .kit-chip:hover{
+    background: linear-gradient(160deg, rgba(20,200,196,0.07) 0%, rgba(20,200,196,0.16) 100%);
+    color: var(--c-navy); border-color: var(--c-teal);
+    box-shadow: 0 2px 8px rgba(20,200,196,0.18), inset 0 1px 0 rgba(255,255,255,0.9);
+    transform: translateY(-1px);
+  }
+  .element-chip:active, .kit-chip:active{ cursor:grabbing; transform: translateY(0); }
+  .element-chip .palette-icon{
+    display:none; /* replaced by SVG previews */
+  }
+  .element-chip .chip-svg, .kit-chip .chip-svg{
+    width:36px; height:26px; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .element-chip .chip-svg svg, .kit-chip .chip-svg svg{
+    width:100%; height:100%; overflow:visible;
+  }
+  .element-chip .chip-name, .kit-chip .chip-name{
+    font-weight:800; font-size:9.5px; letter-spacing:0.02em;
+    color: var(--c-text-soft); text-align:center; line-height:1;
+  }
+  /* Kit chips (Kits bar) show full component names (e.g. "Priority
+     Encoder"), which don't fit the 54px single-line width used by the
+     short gate-name chips in the Elements bar — widen and allow wrapping,
+     scoped to .kit-item so the plain gate chips elsewhere are unaffected. */
+  .kit-item.kit-chip{ width:auto; min-width:54px; max-width:96px; position:relative; }
+
+  /* Kit chip "choose view" arrow — sits in the corner of a kit palette
+     chip (Multiplexer, Demultiplexer, Decoder, Encoder, Priority Encoder).
+     Clicking it opens a 2-option popup (Block Diagram / Full Circuit)
+     that decides which version gets placed the *next* time this chip is
+     clicked — the chip remembers the last choice via data-kit-view.
+     Once a kit is placed on the canvas its view is fixed; there is no
+     way to convert between Block Diagram and Full Circuit afterward. */
+  .kit-chip-arrow{
+    position:absolute; top:-6px; right:-6px; z-index:3;
+    width:17px; height:17px; border-radius:50%;
+    background: var(--c-white); border:1.3px solid #c3ccd8;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; box-shadow:0 1px 3px rgba(15,42,74,0.18);
+    transition: border-color .12s ease, box-shadow .12s ease;
+  }
+  .kit-chip-arrow:hover{ border-color: var(--c-teal); box-shadow:0 2px 5px rgba(15,42,74,0.26); }
+  .kit-chip-arrow svg{ width:9px; height:9px; pointer-events:none; }
+  .kit-chip-arrow svg path{ stroke:#51607a; stroke-width:1.8; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+  .kit-chip-arrow:hover svg path{ stroke: var(--c-teal); }
+  /* Gold ring = this chip is currently set to place the Full Circuit
+     (x-ray) version next, matching the gold board-edge used by that view. */
+  .kit-chip-arrow.mode-circuit{ border-color:#e8b23d; }
+  .kit-chip-arrow.mode-circuit svg path{ stroke:#c98a1a; }
+
+  .kit-chip-menu{
+    position:fixed; z-index:2000; display:none;
+    min-width:150px; padding:5px;
+    background: var(--c-white); border:1.5px solid #d8e0ea; border-radius:9px;
+    box-shadow: 0 8px 24px rgba(15,42,74,0.18);
+  }
+  .kit-chip-menu.open{ display:block; }
+  .kit-chip-menu-item{
+    padding:7px 9px; border-radius:6px; font-size:11.5px; font-weight:700;
+    color: var(--c-text-soft); cursor:pointer; white-space:nowrap;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  .kit-chip-menu-item:hover{ background:#f4f6f9; color:var(--c-navy); }
+  .kit-chip-menu-item.active{ color: var(--c-navy); }
+  .kit-chip-menu-item .kcm-check{ opacity:0; font-size:11px; color:var(--c-teal); }
+  .kit-chip-menu-item.active .kcm-check{ opacity:1; }
+  .kit-item.kit-chip .chip-name{ white-space:normal; line-height:1.2; }
+
+  /* ---------- Switch Palette Chip — Split Button Design ----------
+     The chip is split into two zones:
+       - upper body: same look/feel as any element chip (drag or click = 1 switch)
+       - lower tab:  a narrow strip with a ▾ chevron — click to open 2-8 palette
+     A hairline border separates the two zones. The tab gets a subtle teal tint
+     on hover so users understand it's a separate interactive area. */
+  .switch-palette-wrapper{
+    position:relative; display:inline-flex;
+  }
+  .switch-palette-chip{
+    flex-direction:column !important;
+    padding:0 !important;
+    overflow:hidden;
+    gap:0 !important;
+    cursor:default !important;
+  }
+  /* Upper body zone */
+  .sw-chip-body{
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:6px 6px 4px;
+    cursor:grab; width:100%;
+    border-radius: 9px 9px 0 0;
+    transition: background .12s ease;
+  }
+  .switch-palette-chip:not(:active) .sw-chip-body:hover{
+    background: rgba(20,200,196,0.10);
+  }
+  .sw-chip-body:active{ cursor:grabbing; }
+  /* Lower arrow tab zone */
+  .sw-chip-arrow-tab{
+    display:flex; align-items:center; justify-content:center;
+    width:100%; height:13px;
+    border-top: 1px solid #d8e0ea;
+    border-radius: 0 0 9px 9px;
+    background: #f3f6fb;
+    cursor:pointer;
+    transition: background .12s ease, border-color .12s ease;
+    flex-shrink:0;
+  }
+  .sw-chip-arrow-tab:hover{
+    background: var(--c-teal-soft);
+    border-color: var(--c-teal);
+  }
+  .sw-chip-arrow-tab svg{
+    width:10px; height:7px; display:block; pointer-events:none;
+  }
+  /* Rail variant: arrow tab is on the right side instead of bottom */
+  .rail-variant .switch-palette-chip{
+    flex-direction:row !important;
+  }
+  .rail-variant .sw-chip-body{
+    padding:4px 0 4px 3px;
+    border-radius: 6px 0 0 6px;
+    flex:1;
+  }
+  .rail-variant .sw-chip-arrow-tab{
+    width:11px; height:100%;
+    border-top:none; border-left: 1px solid #d8e0ea;
+    border-radius: 0 6px 6px 0;
+    background: #f3f6fb;
+  }
+  .rail-variant .sw-chip-arrow-tab svg{
+    width:7px; height:10px;
+    transform: rotate(-90deg);
+  }
+  /* The floating submenu — position:fixed, placed by JS */
+  .switch-palette-submenu{
+    position:fixed;
+    background: var(--c-white);
+    border: 1.5px solid var(--c-gray);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: 4px;
+    display:none; z-index:2000;
+    min-width:130px;
+    flex-direction:column; gap:1px;
+  }
+  .switch-palette-submenu.open{ display:flex; }
+  /* Submenu header label */
+  .sw-palette-header{
+    font-weight:800; font-size:9px; letter-spacing:0.09em; text-transform:uppercase;
+    color: var(--c-text-soft); padding: 4px 8px 3px; line-height:1;
+  }
+  /* Each row inside the submenu */
+  .sw-palette-item{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding: 6px 9px; border-radius:7px;
+    cursor:grab;
+    transition: background .1s ease;
+    user-select:none;
+  }
+  .sw-palette-item:hover{ background: var(--c-teal-soft); }
+  .sw-palette-item:active{ cursor:grabbing; }
+  .sw-palette-item .sw-pi-label{
+    font-weight:800; font-size:11px; letter-spacing:0.02em;
+    color: var(--c-navy); white-space:nowrap;
+  }
+  .sw-palette-item .sw-pi-count{
+    font-weight:700; font-size:10px;
+    color: var(--c-text-soft); white-space:nowrap;
+  }
+  .element-chip:hover .chip-name, .kit-chip:hover .chip-name{ color: var(--c-navy); }
+  /* Kits dropdown panel just needs to be wide enough to host a chip with
+     some breathing room, rather than the narrow text-list width. */
+  .kits-dropdown-panel{ min-width:0; width:auto; padding:8px; }
+  .kit-chip{ cursor:pointer; }
+
+  /* ---------- Switch Bank: unified panel for multi-switch placements ----------
+     A .switch-bank wrapper is injected into #world when N > 1 switches are
+     placed via the palette. It provides one shared background + border so the
+     group reads as a single element, while each enclosed .comp-node still owns
+     its own pins, toggle logic, and drag handle.
+     Individual .comp-node borders/backgrounds are suppressed inside a bank. */
+  .switch-bank{
+    position:absolute;
+    background: linear-gradient(160deg, #f8fafc 0%, #edf1f7 100%);
+    border: 2px solid #b0bcd0;
+    border-radius: var(--radius-md);
+    box-shadow: 0 3px 10px rgba(15,42,74,0.11), 0 1px 3px rgba(15,42,74,0.06),
+                inset 0 1px 0 rgba(255,255,255,0.88);
+    pointer-events: none; /* bank itself doesn't intercept events — comp-nodes do */
+  }
+  /* When any child switch inside the bank is selected, highlight the bank border */
+  .switch-bank.bank-has-selected{
+    border-color: var(--c-teal);
+    box-shadow: 0 0 0 2px rgba(20,200,196,0.28), 0 3px 10px rgba(15,42,74,0.11);
+  }
+  /* Divider line between switches inside a bank */
+  .switch-bank-divider{
+    position:absolute;
+    left: 8px; right: 8px; height: 1px;
+    background: #c8d4e0;
+    pointer-events: none;
+  }
+  /* Suppress individual comp-body styling when inside a bank */
+  .switch-bank + .comp-node .comp-body,
+  .in-switch-bank .comp-body{
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* ---------- Vertical Elements Rail: fixed icon-only strip, right edge ----------
+     Always visible (independent of the Elements top-bar toggle / horizontal
+     bar). Tiny icon-only chips for every gate/input/output, stacked in a
+     thin column pinned to the right side of the screen, on top of the
+     canvas, so it never disappears and never has to be re-opened. */
+  #elements-rail{
+    position:fixed; top:56px; right:0; bottom:28px;
+    width:46px; z-index:40;
+    background: var(--c-white);
+    border-left: 1px solid var(--c-gray);
+    box-shadow: -2px 0 10px rgba(15,42,74,0.08);
+    display:flex; flex-direction:column; align-items:center;
+    padding: 8px 0; gap:10px;
+    overflow-y:auto; overflow-x:hidden;
+    transition: top .15s ease;
+  }
+  #app.elements-open #elements-rail, #app.kits-open #elements-rail{ top:164px; }
+  /* Optional via View menu — hidden by default (off until the user
+     turns it on from View ▸ Element Rail). */
+  #app:not(.rail-open) #elements-rail{ display:none; }
+  #elements-rail::-webkit-scrollbar{ width:5px; }
+  #elements-rail::-webkit-scrollbar-thumb{ background: var(--c-gray); border-radius:3px; }
+  .rail-section-label{
+    font-weight:800; font-size:7.5px; letter-spacing:0.08em; text-transform:uppercase;
+    color: var(--c-text-soft); text-align:center; line-height:1.1;
+    padding: 2px 0; width:100%;
+  }
+  .rail-divider{ width:28px; height:1px; background: var(--c-gray); flex:0 0 auto; }
+  .rail-chip{
+    display:flex; align-items:center; justify-content:center;
+    width:30px; height:24px; flex:0 0 auto;
+    border: 1.2px solid #d8e0ea; border-radius:7px;
+    background: linear-gradient(160deg, #ffffff 0%, #f3f6fb 100%);
+    cursor: grab;
+    box-shadow: 0 1px 3px rgba(15,42,74,0.07), inset 0 1px 0 rgba(255,255,255,0.9);
+    transition: background .12s ease, border-color .12s ease, box-shadow .12s ease, transform .1s ease;
+    user-select:none;
+  }
+  .rail-chip:hover{
+    background: linear-gradient(160deg, rgba(20,200,196,0.07) 0%, rgba(20,200,196,0.16) 100%);
+    border-color: var(--c-teal);
+    box-shadow: 0 2px 6px rgba(20,200,196,0.2), inset 0 1px 0 rgba(255,255,255,0.9);
+    transform: translateX(-1px);
+  }
+  .rail-chip:active{ cursor:grabbing; transform: translateX(0); }
+  .rail-chip svg{ width:20px; height:15px; display:block; overflow:visible; }
+  /* Tooltip-style name, shown on hover so icons can stay tiny */
+  .rail-chip{ position:relative; }
+  .rail-chip::after{
+    content: attr(data-label);
+    position:absolute; right:calc(100% + 8px); top:50%; transform:translateY(-50%);
+    background: var(--c-navy-deep); color: var(--c-text-invert);
+    font-size:10.5px; font-weight:700; white-space:nowrap;
+    padding:4px 8px; border-radius:6px;
+    box-shadow: var(--shadow-md);
+    opacity:0; pointer-events:none; transition: opacity .1s ease;
+    z-index:50;
+  }
+  .rail-chip:hover::after{ opacity:1; }
+  /* When the canvas-viewport's own scrollbar/edge sits under the rail,
+     nudge zoom/status readouts that might otherwise be obscured. Handled
+     purely via the rail's z-index sitting above the canvas but below
+     modals (which use z-index 60+). */
+
+  /* ---------- Secondary Tool Strip (grid + selection tools) ---------- */
+  #tool-strip{
+    grid-row:3; display:flex; align-items:center; justify-content:space-between;
+    background: var(--c-white);
+    border-bottom: 1px solid var(--c-gray);
+    padding: 0 14px; gap:10px;
+    z-index:20;
+  }
+  #tool-strip .strip-group{ display:flex; align-items:center; gap:4px; }
+  .strip-btn{
+    display:flex; align-items:center; justify-content:center;
+    width:30px; height:28px; border-radius: var(--radius-sm);
+    background: transparent; border:1px solid transparent; color: var(--c-navy);
+    cursor:pointer; font-weight:800; font-size:14px;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  .strip-btn:hover{ background: var(--c-teal-soft); border-color: var(--c-teal); }
+  .strip-btn.active{ background: var(--c-navy); color:var(--c-text-invert); }
+  .strip-btn:disabled{ opacity:0.3; cursor:not-allowed; }
+  #zoom-readout{
+    font-weight:800; font-size:12.5px; color: var(--c-navy);
+    min-width:42px; text-align:center; user-select:none;
+  }
+  .strip-divider{ width:1px; height:20px; background: var(--c-gray); margin:0 6px; }
+
+  #tool-strip{ display:none !important; }
+  #properties-panel{ display:none !important; }
+
+  /* ---------- Properties Floating Modal ---------- */
+  #props-modal{
+    position:fixed; z-index:200;
+    background: var(--c-white);
+    border:1px solid var(--c-gray);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width:280px; max-height:80vh;
+    overflow-y:auto;
+    display:none;
+  }
+  #props-modal-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 14px 10px;
+    border-bottom:1px solid var(--c-gray);
+    position:sticky; top:0; background:var(--c-white); z-index:1;
+  }
+  #props-modal-title{
+    font-weight:800; font-size:13px; letter-spacing:0.03em; color:var(--c-navy);
+  }
+  #props-modal-close{
+    width:24px; height:24px; border-radius:6px;
+    border:1.5px solid var(--c-gray); background:var(--c-bg);
+    cursor:pointer; font-size:14px; color:var(--c-text-soft);
+    display:flex; align-items:center; justify-content:center;
+    line-height:1;
+  }
+  #props-modal-close:hover{ background:var(--c-teal-soft); border-color:var(--c-teal); color:var(--c-navy); }
+  #props-modal-body{ padding:14px; }
+
+  /* ---------- Wire Width Tool (tool strip, left side) ---------- */
+  #wire-width-tool{
+    display:flex; align-items:center; gap:2px; margin-left:8px;
+  }
+  #wire-width-tool .strip-btn{
+    width:22px; height:20px; border-radius:6px; font-size:13px;
+  }
+  #wire-width-readout{
+    font-weight:800; font-size:11.5px; color: var(--c-navy);
+    min-width:38px; text-align:center; user-select:none;
+  }
+
+  /* ---------- Zoom Tool (bottom-right, lives in status bar) ---------- */
+  #zoom-tool{
+    display:flex; align-items:center; gap:2px;
+  }
+  #zoom-tool .strip-btn{
+    width:22px; height:20px; border-radius:6px; color: var(--c-text-invert);
+    font-size:12px;
+  }
+  #zoom-tool .strip-btn:hover{ background: rgba(20,200,196,0.28); border-color: var(--c-teal); }
+  #zoom-tool .strip-btn.active{ background: var(--c-teal); color: var(--c-navy-deep); }
+  #zoom-tool #zoom-readout{
+    color: var(--c-text-invert); min-width:38px; font-size:11px;
+  }
+
+  /* ---------- Select Tool (bottom-right, lives in status bar) ----------
+     Touch devices have no middle-click/space-bar/Shift to fall back on,
+     so box-select needs an explicit on-screen toggle: while active, plain
+     drag on empty canvas draws a selection box instead of panning. */
+  #select-tool{ display:flex; align-items:center; }
+  #select-tool .strip-btn{
+    width:22px; height:20px; border-radius:6px; color: var(--c-text-invert);
+    padding:0;
+  }
+  #select-tool .strip-btn svg{ width:14px; height:14px; }
+  #select-tool .strip-btn:hover{ background: rgba(20,200,196,0.28); border-color: var(--c-teal); }
+  #select-tool .strip-btn.active{ background: var(--c-teal); color: var(--c-navy-deep); border-color: var(--c-teal); }
+
+  /* ---------- Main Body: Toolbox | Canvas | Properties ---------- */
+  #main-body{
+    grid-row:3; display:grid;
+    grid-template-columns: 1fr;
+    overflow:hidden; position:relative;
+  }
+
+  /* ---------- Canvas Viewport ---------- */
+  #canvas-viewport{
+    position:relative; overflow:hidden; background: var(--c-bg);
+    cursor: default;
+  }
+  /* CAD-style frame, drawn as its own top-most overlay (not a box-shadow on
+     #canvas-viewport itself). The grid/wire/component/overlay canvases below
+     are sized from getBoundingClientRect() and can be off by a sub-pixel, so
+     a box-shadow on the shared parent gets fully painted-over on the
+     right/bottom edge while the top/left (anchored at 0,0) stay clean. A
+     dedicated overlay sized to 100%/100% and stacked last always paints on
+     top, so all four edges render identically. */
+  #canvas-border-frame{
+    position:absolute; inset:0; pointer-events:none; z-index:10;
+    box-shadow:
+      inset 0 0 0 1px #3a3a3a,
+      inset 0 0 0 2px rgba(255,255,255,0.5);
+  }
+  #grid-canvas, #wire-canvas, #component-layer, #overlay-canvas{
+    position:absolute; top:0; left:0;
+  }
+  @keyframes univ-banner-in{
+    from{ opacity:0; transform:translate(-50%,-10px); }
+    to{ opacity:1; transform:translate(-50%,0); }
+  }
+  #univ-convert-banner{
+    position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    z-index:150; display:flex; align-items:center; gap:14px;
+    background:var(--c-navy); color:#fff; padding:10px 16px 10px 14px; border-radius:12px;
+    box-shadow:0 8px 26px rgba(10,29,51,0.34), 0 0 0 1px rgba(245,166,35,0.35);
+    font-size:12.5px; font-weight:700; white-space:nowrap;
+    border-top:2.5px solid var(--c-amber);
+    animation: univ-banner-in .18s ease-out;
+  }
+  #univ-convert-banner-icon{
+    width:30px; height:30px; border-radius:8px; flex-shrink:0;
+    background:var(--c-amber-soft); display:flex; align-items:center; justify-content:center;
+  }
+  #univ-convert-banner-icon svg{ width:17px; height:17px; }
+  #univ-convert-banner-copy{ display:flex; flex-direction:column; gap:2px; line-height:1.3; }
+  #univ-convert-banner-title{ font-size:12.5px; font-weight:800; color:#fff; }
+  #univ-convert-banner-title .univ-target-pill{
+    display:inline-block; background:var(--c-amber); color:var(--c-navy-deep);
+    border-radius:5px; padding:1px 6px; margin-left:5px; font-size:11px; font-weight:800;
+    letter-spacing:0.02em;
+  }
+  #univ-convert-banner-text{
+    font-size:11px; font-weight:600; color:rgba(255,255,255,0.72); white-space:nowrap;
+  }
+  #univ-convert-banner-text.has-count{ color:var(--c-teal); font-weight:800; }
+  #univ-convert-banner-actions{ display:flex; align-items:center; gap:8px; }
+  #univ-convert-banner button{
+    padding:7px 14px; border-radius:7px; border:none; font-weight:800; font-size:12px; cursor:pointer;
+    transition: background .12s ease, opacity .12s ease, transform .08s ease;
+  }
+  #univ-convert-banner button:active{ transform:scale(0.96); }
+  #univ-convert-apply{ background:var(--c-teal); color:var(--c-navy-deep); display:flex; align-items:center; gap:6px; }
+  #univ-convert-apply:hover:not(:disabled){ background:#11b3af; }
+  #univ-convert-apply:disabled{ opacity:0.35; cursor:not-allowed; background:rgba(255,255,255,0.18); color:rgba(255,255,255,0.6); }
+  #univ-convert-apply-count{
+    background:rgba(10,29,51,0.22); border-radius:10px; padding:1px 7px; font-size:11px; font-weight:800;
+  }
+  #univ-convert-apply:disabled #univ-convert-apply-count{ display:none; }
+  #univ-convert-cancel{ background:rgba(255,255,255,0.15); color:#fff; }
+  #univ-convert-cancel:hover{ background:rgba(255,255,255,0.28); }
+  .conversion-tool-option:hover{ border-color:var(--c-amber) !important; background:var(--c-amber-soft) !important; }
+  .conversion-tool-option:active{ transform:scale(0.98); }
+  /* grid/wire/overlay canvases are purely visual (drawing surfaces) and must
+     never intercept pointer events — #component-layer (which holds the real
+     interactive pin/gate DOM nodes) needs to receive mouse events directly.
+     The #canvas-viewport's own mousedown/mousemove/wheel listeners handle
+     panning, box-select, and wire-drag tracking regardless of which layer
+     is visually on top. */
+  #grid-canvas, #wire-canvas, #overlay-canvas{ pointer-events:none; }
+  #component-layer{
+    width:100%; height:100%;
+    /* component DOM nodes live here, transformed by pan/zoom via CSS transform on #world */
+  }
+  #world{
+    position:absolute; top:0; left:0; transform-origin: 0 0;
+    width:1px; height:1px; /* sized dynamically; components are positioned absolutely within */
+  }
+  .comp-node{
+    position:absolute; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
+    cursor: grab;
+    user-select:none; -webkit-user-select:none;
+  }
+  .comp-node.dragging{ cursor:grabbing; }
+  /* Nothing rendered on a component — type name, custom name, pin labels,
+     state readouts — should ever be selectable as browser text (it isn't
+     real content the user can copy; dragging over it to marquee-select
+     components on the canvas shouldn't highlight it either). */
+  .comp-node, .comp-node *{
+    user-select:none; -webkit-user-select:none; -moz-user-select:none;
+  }
+  /* ---- Improved comp-body ---- */
+  .comp-body{
+    position:relative; width:100%; height:100%;
+    background: linear-gradient(160deg, #ffffff 0%, #f2f5fb 100%);
+    border: 1.5px solid #b8c4d8;
+    border-radius: var(--radius-md);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:13px; color: var(--c-navy);
+    box-shadow: 0 2px 6px rgba(15,42,74,0.09), 0 1px 2px rgba(15,42,74,0.05),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+    transition: border-color .13s ease, box-shadow .13s ease;
+    user-select:none; -webkit-user-select:none;
+  }
+  /* Logic-gate bodies are drawn as IEC/ANSI standard symbols via inline SVG
+     (see GateShapes + ComponentView). The SVG carries its own outline, so
+     the generic box border/background/shadow used by non-gate components
+     (switches, LEDs, constants, probes) is turned off here. */
+  .comp-body.is-gate-shape{
+    background: transparent; border: none; box-shadow: none; border-radius: 0;
+  }
+  .comp-body.is-gate-shape svg{ width:100%; height:100%; display:block; overflow: visible; }
+  .comp-body.is-gate-shape .gate-outline{
+    fill: var(--c-white); stroke: var(--c-navy); stroke-width:2.5;
+    transition: stroke .12s ease, filter .12s ease;
+  }
+  .comp-node.selected .comp-body.is-gate-shape .gate-outline{
+    stroke: var(--c-teal);
+    filter: drop-shadow(0 0 4px var(--c-teal-soft));
+  }
+  .comp-body.is-gate-shape .gate-bubble{
+    fill: var(--c-white); stroke: var(--c-navy); stroke-width:2.5;
+    transition: stroke .12s ease;
+  }
+  .comp-node.selected .comp-body.is-gate-shape .gate-bubble{ stroke: var(--c-teal); }
+  .comp-body.is-gate-shape .gate-leadline{ stroke: var(--c-navy); stroke-width:2.5; transition: stroke .12s ease; }
+  .comp-node.selected .comp-body.is-gate-shape .gate-leadline{ stroke: var(--c-teal); }
+
+  /* Kit "Full Circuit" x-ray view — styled to match the app's own gate
+     look (white body, navy outline, rectangular), see _kitInternalSVG(). Sits
+     as an inset:0 overlay inside .comp-body, shown/hidden by ComponentView.sync. */
+  .kit-internal-wrap{
+    background: linear-gradient(160deg, #ffffff 0%, #f2f5fb 100%);
+    border: 2px solid var(--c-navy);
+    border-radius: 0;
+    box-shadow: 0 2px 6px rgba(15,42,74,0.09), 0 1px 2px rgba(15,42,74,0.05),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .comp-node.selected .kit-internal-wrap{ border-color: var(--c-teal); }
+
+  /* Block Diagram body for MSI-style kits (MUX/DEMUX/DECODER/ENCODER/
+     PRIORITYENC/BCDSEG) — a real IC-chip outline instead of the generic
+     rounded switch/LED box: squared corners, a slightly heavier navy
+     border matching the Full Circuit view's own board styling (so toggling
+     between the two views feels like one continuous object, not two
+     unrelated looks), a subtle pin-1 notch cut into the top-left corner the
+     way a real DIP package is marked, and a fine center rule under the part
+     name evoking a chip's silkscreen legend. */
+  .comp-body.is-ic-shape{
+    background: linear-gradient(160deg, #ffffff 0%, #eef1f7 100%);
+    border: 2px solid var(--c-navy);
+    border-radius: 3px;
+    box-shadow: 0 2px 6px rgba(15,42,74,0.11), 0 1px 2px rgba(15,42,74,0.06),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+    position: relative;
+  }
+  .comp-body.is-ic-shape::before{
+    /* Pin-1 notch: a small quarter-circle bite out of the top-left corner,
+       drawn as a radial mask rather than an extra element. */
+    content:''; position:absolute; top:-2px; left:-2px; width:12px; height:12px;
+    background: radial-gradient(circle at 0 0, transparent 6px, var(--c-navy) 6.5px, var(--c-navy) 7px, transparent 7.5px);
+    pointer-events: none;
+  }
+  .comp-node.selected .comp-body.is-ic-shape{ border-color: var(--c-teal); }
+  .comp-node.selected .comp-body.is-ic-shape::before{ background: radial-gradient(circle at 0 0, transparent 6px, var(--c-teal) 6.5px, var(--c-teal) 7px, transparent 7.5px); }
+  .comp-body.is-ic-shape .gate-name-text{
+    font-family: 'Segoe UI', Arial, sans-serif;
+    letter-spacing: 0.3px;
+  }
+  .comp-body.is-ic-shape .gate-type-name{
+    position: relative;
+    padding-bottom: 5px;
+  }
+  .comp-body.is-ic-shape .gate-type-name::after{
+    content:''; position:absolute; left:15%; right:15%; bottom:0; height:1px;
+    background: var(--c-teal); opacity:0.55;
+  }
+
+  .comp-node.selected .comp-body{
+    border-color: var(--c-teal);
+    box-shadow: 0 0 0 3px var(--c-teal-soft), 0 3px 12px rgba(15,42,74,0.12),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  /* TEXT (annotation): floating label, no box in the normal state — only a
+     faint dashed outline while hovered/selected/being edited so it's easy
+     to find and grab. */
+  .comp-body.is-text-shape{
+    background: transparent; border: 1.5px dashed transparent; box-shadow: none;
+    border-radius: 4px; padding: 2px 4px;
+  }
+  .comp-node:hover .comp-body.is-text-shape{ border-color: #c4cbd4; }
+  .comp-node.selected .comp-body.is-text-shape{
+    border-color: var(--c-teal); box-shadow: none; background: rgba(20,200,196,0.06);
+  }
+  .text-el-content{
+    color: var(--c-navy); font-weight: 600; font-family: "Segoe UI", Arial, sans-serif;
+    white-space: pre-wrap; word-break: break-word; text-align: center;
+    line-height: 1.3; cursor: text;
+  }
+  .text-el-content[contenteditable="true"]{
+    cursor: text; outline: none; background: rgba(255,255,255,0.85);
+    box-shadow: 0 0 0 2px var(--c-teal-soft);
+    user-select: text; -webkit-user-select: text;
+  }
+  /* Convert-to-Universal mode: while the picker banner is open, every gate
+     that's a valid conversion candidate (right category, not already the
+     target type) gets a soft amber dashed hint so it's obvious what can be
+     selected — even before it's actually selected. Once picked, the normal
+     teal .selected treatment takes over and this hint steps back. */
+  @keyframes convert-eligible-pulse{
+    0%, 100%{ opacity:0.55; }
+    50%{ opacity:1; }
+  }
+  .comp-node.convert-eligible:not(.selected) .comp-body.is-gate-shape .gate-outline{
+    stroke: var(--c-amber);
+    stroke-dasharray: 5 3;
+    animation: convert-eligible-pulse 1.6s ease-in-out infinite;
+  }
+  .comp-node.convert-eligible.selected .comp-body.is-gate-shape .gate-outline{
+    stroke: var(--c-teal);
+    filter: drop-shadow(0 0 5px var(--c-amber));
+  }
+  .comp-label{
+    display: none;
+  }
+  /* Overbar for inverted gates (NOT, NAND, NOR, XNOR).
+     text-decoration:overline confirmed working in Chrome/Edge.
+     Label is now BELOW the gate so it is never clipped by #canvas-viewport
+     (overflow:hidden). Previously at top:-20px it was clipped whenever a
+     component was placed near the top of the viewport. */
+  .lbl-overbar{
+    text-decoration: overline;
+  }
+  .pin{
+    position:absolute; width:11px; height:11px; border-radius:50%;
+    background: var(--c-gray-dark);
+    border: 2.5px solid var(--c-white);
+    box-shadow: 0 0 0 1.5px var(--c-navy), 0 1px 3px rgba(15,42,74,0.18);
+    cursor: crosshair; z-index:5;
+    transition: background .1s ease, transform .12s ease, box-shadow .12s ease;
+  }
+  .pin:hover, .pin.pin-hover-target{
+    background: var(--c-teal); transform: scale(1.5);
+    box-shadow: 0 0 0 1.5px var(--c-teal), 0 0 10px 3px var(--c-teal-soft);
+  }
+  /* Click-to-wire: first selected pin glows with an animated ring */
+  @keyframes pin-pending-pulse {
+    0%   { box-shadow: 0 0 0 2px var(--c-teal), 0 0 10px 4px rgba(20,200,196,0.6); }
+    50%  { box-shadow: 0 0 0 4px var(--c-teal), 0 0 18px 8px rgba(20,200,196,0.85); }
+    100% { box-shadow: 0 0 0 2px var(--c-teal), 0 0 10px 4px rgba(20,200,196,0.6); }
+  }
+  .pin.pin-pending-wire{
+    background: var(--c-teal) !important; transform: scale(1.8) !important;
+    animation: pin-pending-pulse 1s ease-in-out infinite;
+    z-index: 20;
+  }
+  .pin.pin-high{ background: var(--wire-high); box-shadow: 0 0 0 1.5px #177a42, 0 0 5px 1px rgba(31,174,92,0.4); }
+  .pin.pin-low{ background: var(--wire-low); box-shadow: 0 0 0 1.5px #a0202e, 0 0 5px 1px rgba(224,54,74,0.4); }
+  .pin.pin-float{ background: var(--wire-float); box-shadow: 0 0 0 1.5px #a0202e, 0 0 5px 1px rgba(224,54,74,0.4); }
+
+  /* Per-pin id labels for 'ic'-category components (MUX/DEMUX/DECODER/
+     ENCODER/PRIORITYENC, …) — each side-pin gets its id (D0, S1, Y3, EN…)
+     printed just inside the body next to it, since these pins aren't
+     interchangeable the way a plain gate's a/b inputs are. */
+  .pin-io-label{
+    position:absolute; z-index:3; pointer-events:none; user-select:none;
+    font-weight:800; font-size:7.5px; letter-spacing:0.01em;
+    color: var(--c-text-soft); line-height:1;
+    transform: translateY(-50%);
+    text-shadow: 0 0 3px rgba(255,255,255,0.9);
+  }
+  .pin-io-label-in{ left:20px; text-align:left; }
+  .pin-io-label-out{ right:20px; text-align:right; }
+
+  /* Full Circuit x-ray view (kits): the real pin's left/right position is
+     set inline at creation (see ComponentView.createNode, KIT_PIN_INSET) to
+     match CircuitComponent.pinWorldPos — these overrides just keep the pin's
+     id label a bit further inside so it doesn't crowd the now-inset pin. */
+  .comp-node.kit-circuit-view .pin-io-label-in{ left: 56px; }
+  .comp-node.kit-circuit-view .pin-io-label-out{ right: 56px; }
+
+  /* NODE (junction) renders as a single dot — the real .pin-in/.pin-out
+     hit-targets still exist underneath (so wiring/click logic is untouched)
+     but are made invisible so only one dot is ever seen. Kept modest in
+     size (not blown up) so there's still a clickable patch of the body
+     itself between/around them — otherwise the pins blanket the whole
+     14x14 footprint and the node can never be grabbed to drag, only wired. */
+  .comp-node[data-ctype="NODE"] .pin{
+    background: transparent; border: none; box-shadow: none;
+    width: 9px; height: 9px;
+  }
+  .comp-node[data-ctype="NODE"] .pin:hover,
+  .comp-node[data-ctype="NODE"] .pin.pin-hover-target{
+    background: transparent; box-shadow: none; transform: translateY(-50%) scale(1);
+  }
+  .comp-node[data-ctype="NODE"] .pin.pin-pending-wire{
+    background: transparent !important; box-shadow: none !important; transform: translateY(-50%) scale(1) !important;
+    animation: none;
+  }
+  /* Since NODE's real pins are invisible, give visual feedback on the single
+     dot itself instead, via :has() (the dot is the only thing the user sees). */
+  .comp-node[data-ctype="NODE"]:has(.pin:hover) .node-dot,
+  .comp-node[data-ctype="NODE"]:has(.pin.pin-hover-target) .node-dot{
+    fill: var(--c-teal) !important;
+    filter: drop-shadow(0 0 4px var(--c-teal-soft));
+  }
+  @keyframes node-dot-pending-pulse {
+    0%   { filter: drop-shadow(0 0 3px rgba(20,200,196,0.7)); }
+    50%  { filter: drop-shadow(0 0 7px rgba(20,200,196,0.95)); }
+    100% { filter: drop-shadow(0 0 3px rgba(20,200,196,0.7)); }
+  }
+  .comp-node[data-ctype="NODE"]:has(.pin.pin-pending-wire) .node-dot{
+    fill: var(--c-teal) !important;
+    animation: node-dot-pending-pulse 1s ease-in-out infinite;
+  }
+  /* Double-click-to-unlock: while armed for its one drag, the dot gets a
+     blue glow and a grab cursor, so it's clear the node is temporarily in
+     "drag me" mode rather than its usual "wire me" mode. */
+  .comp-node[data-ctype="NODE"].node-unlocked{ cursor: grab; }
+  .comp-node[data-ctype="NODE"].node-unlocked .node-dot{
+    filter: drop-shadow(0 0 5px var(--c-blue-soft));
+  }
+
+  .switch-toggle-area{
+    position:absolute; inset:0; cursor:pointer; border-radius: inherit; z-index:10;
+  }
+
+  /* ---- iOS-style Switch ---- */
+  .sw-track{
+    position:relative; z-index:1;
+    width:80%; height:50%; border-radius:999px;
+    background:#c4cbd4;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.20), inset 0 -1px 2px rgba(255,255,255,0.25);
+    transition: background .22s ease, box-shadow .22s ease;
+    display:flex; align-items:center; padding:0 3px;
+    pointer-events:none;
+  }
+  .sw-thumb{
+    /* width is set via JS as a px value so translateX can be computed correctly */
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 32%, #ffffff 0%, #dde3ee 100%);
+    box-shadow: 0 2px 7px rgba(0,0,0,0.30), 0 1px 2px rgba(0,0,0,0.18);
+    transition: transform .22s cubic-bezier(.4,0,.2,1);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:900; font-size:8px;
+    pointer-events:none;
+    flex-shrink:0;
+  }
+
+  .sevenseg-svg .seg{
+    fill: #ead4d4;
+    transition: fill .12s ease, filter .12s ease;
+  }
+  .sevenseg-svg .seg.lit{
+    fill: #ff2020;
+  }
+
+  /* ---- VARIABLE component ---- */
+  .var-body {
+    border-color: #8a93a1 !important;
+    box-shadow: 0 2px 8px rgba(15,42,74,0.14), 0 1px 2px rgba(15,42,74,0.07),
+                inset 0 1px 0 rgba(255,255,255,0.88) !important;
+    transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+  .var-body.var-off{
+    background: linear-gradient(155deg, #ffe2e6 0%, #ffb9c2 100%);
+    border-color: #c8273c !important;
+  }
+  .var-body.var-on{
+    background: linear-gradient(155deg, #d9f7e4 0%, #9fe8bb 100%);
+    border-color: #14893f !important;
+  }
+  .var-body.var-neutral{
+    background: linear-gradient(155deg, #edf1f7 0%, #dce2ea 100%);
+    border-color: #9aa3b0 !important;
+  }
+  .var-letter{
+    font-family: Georgia, 'Times New Roman', serif;
+    font-weight: 700; font-style: italic;
+    font-size: 17px; line-height: 1;
+    color: #16233a;
+  }
+  .var-state-ring{
+    width:8px; height:8px; border-radius:50%;
+    background:#e0364a;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.18);
+    transition: background .15s ease, box-shadow .15s ease;
+  }
+
+  /* ---- Improved comp-body ---- */
+
+  /* ---------- Box selection rectangle ---------- */
+  #selection-box{
+    position:absolute; border:1.5px dashed var(--c-blue);
+    background: rgba(30,95,204,0.08);
+    pointer-events:none; display:none; z-index:50;
+  }
+
+  /* ---------- Right Properties Panel ---------- */
+  #properties-panel{
+    background: var(--c-white);
+    border-left: 1px solid var(--c-gray);
+    overflow-y:auto; padding: 14px;
+  }
+  .panel-title{
+    font-weight:800; font-size:13px; letter-spacing:0.03em; color: var(--c-navy);
+    margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--c-gray);
+  }
+  .prop-row{ margin-bottom:14px; }
+  .prop-row label{ display:block; margin-bottom:5px; }
+  .prop-value{
+    font-weight:700; font-size:13px; color:var(--c-text);
+    background: var(--c-bg); border:1px solid var(--c-gray);
+    border-radius:6px; padding:7px 9px;
+  }
+  .prop-input{
+    width:100%; font-weight:700; font-size:13px; color:var(--c-text);
+    background: var(--c-white); border:1.5px solid var(--c-gray);
+    border-radius:6px; padding:7px 9px; transition: border-color .12s ease;
+  }
+  .prop-input:focus{ outline:none; border-color: var(--c-teal); box-shadow: 0 0 0 3px var(--c-teal-soft); }
+  /* Variable name picker */
+  .var-name-row{ display:flex; align-items:center; gap:6px; }
+  .var-name-input{
+    width:52px; font-weight:800; font-size:15px; color:var(--c-navy); text-align:center;
+    background: var(--c-white); border:1.5px solid var(--c-gray);
+    border-radius:6px; padding:5px 6px; transition: border-color .12s ease; text-transform:uppercase;
+  }
+  .var-name-input:focus{ outline:none; border-color: var(--c-teal); box-shadow: 0 0 0 3px var(--c-teal-soft); }
+  .var-letter-grid{
+    display:grid; grid-template-columns: repeat(9, 1fr); gap:3px; margin-top:6px;
+  }
+  .var-letter-btn{
+    width:24px; height:24px; border-radius:4px; border:1.5px solid var(--c-gray);
+    background:var(--c-white); font-weight:700; font-size:11px; color:var(--c-text);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition: background .1s, border-color .1s, color .1s;
+  }
+  .var-letter-btn:hover{ background:var(--c-teal-soft); border-color:var(--c-teal); color:var(--c-navy); }
+  .var-letter-btn.active{ background:var(--c-teal); border-color:var(--c-teal); color:#fff; }
+  #ctx-props-inner .var-letter-btn{ width:21px; height:21px; font-size:10px; }
+  .gate-type-grid{
+    display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;
+  }
+  .gate-type-btn{
+    padding:5px 10px; border-radius:5px; border:1.5px solid var(--c-gray);
+    background:var(--c-white); font-weight:800; font-size:11px; color:var(--c-text);
+    cursor:pointer; transition: background .1s, border-color .1s, color .1s;
+  }
+  .gate-type-btn:hover{ background:var(--c-teal-soft); border-color:var(--c-teal); color:var(--c-navy); }
+  .gate-type-btn.active{ background:var(--c-teal); border-color:var(--c-teal); color:#fff; }
+  #ctx-props-inner .gate-type-btn{ padding:4px 8px; font-size:10px; }
+  .state-pill{
+    display:inline-flex; align-items:center; gap:6px;
+    padding: 4px 10px; border-radius: 999px; font-weight:800; font-size:11.5px;
+    letter-spacing:0.03em;
+  }
+  .state-pill.state-1{ background: rgba(31,174,92,0.14); color:#157a3f; }
+  .state-pill.state-0{ background: rgba(138,147,161,0.18); color:#5b6473; }
+  .state-pill.state-x{ background: rgba(224,54,74,0.14); color:#b8253a; }
+  .state-pill .dot{ width:7px; height:7px; border-radius:50%; }
+  .state-1 .dot{ background:#1fae5c; }
+  .state-0 .dot{ background:#8a93a1; }
+  .state-x .dot{ background:#e0364a; }
+
+  /* Gate name text overlay (inside gate body) */
+  .gate-name-text{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    pointer-events:none; user-select:none;
+    gap:2px; z-index:2;
+  }
+  .gate-name-text .gate-type-name{
+    font-weight:800; font-size:11px; letter-spacing:0.04em;
+    color: var(--c-navy); line-height:1; text-align:center;
+    text-shadow: 0 0 4px rgba(255,255,255,0.9);
+  }
+  .gate-name-text .gate-user-label{
+    font-weight:700; font-size:9.5px; letter-spacing:0.02em;
+    color: var(--c-teal); line-height:1; text-align:center;
+    text-shadow: 0 0 6px rgba(20,200,196,0.35);
+    display:none;
+  }
+  .gate-name-text .gate-user-label.has-label{
+    display:block;
+  }
+  /* Link badge — shown inside a SWITCH body when it has a linkGroup.
+     Appears below the track, teal chain icon + source name. */
+  .sw-link-badge{
+    position:absolute; bottom:3px; left:0; right:0;
+    display:none;
+    align-items:center; justify-content:center; gap:2px;
+    font-size:8.5px; font-weight:800; letter-spacing:0.04em;
+    color: var(--c-teal);
+    pointer-events:none; user-select:none;
+    text-shadow: 0 0 5px rgba(20,200,196,0.4);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    padding: 0 4px;
+  }
+  /* .sw-link-badge.visible — badge is never shown on the canvas body;
+     link info is surfaced only through the Properties panel instead. */
+  /* Label shown at the bottom of 7-SEG body, below the segments */
+  .sevenseg-int-label{
+    font-weight:800; font-size:9.5px; letter-spacing:0.04em;
+    color: var(--c-navy);
+    text-align:center; line-height:1;
+    padding: 3px 4px 0;
+    pointer-events:none; user-select:none;
+    display:none;
+  }
+  .sevenseg-int-label.has-label{ display:block; }
+  /* External name label — sits below ANY component body (outside it),
+     bold black text, shown only once that component has a custom name.
+     Used by every type except VARIABLE (shows its letter directly) and
+     SEVENSEG/BCDSEG (name already shown inside, under the segments). */
+  .comp-ext-label{
+    position:absolute; top:100%; left:50%; transform:translateX(-50%);
+    margin-top:4px;
+    font-weight:800; font-size:11px; letter-spacing:0.01em;
+    color:#0a0a0a;
+    text-align:center; line-height:1.1; white-space:nowrap;
+    pointer-events:none; user-select:none; -webkit-user-select:none; -moz-user-select:none;
+    display:none;
+  }
+  .comp-ext-label.has-label{ display:block; }
+  /* Keep ext-label class but hidden — replaced by internal */
+  .sevenseg-ext-label{ display:none !important; }
+
+  .empty-panel-hint{
+    color: var(--c-text-soft); font-size:12.5px; font-weight:600; line-height:1.6;
+    padding: 10px 2px;
+  }
+  .pin-list{ display:flex; flex-direction:column; gap:6px; }
+  .pin-list-item{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:12px; font-weight:700; color: var(--c-text-soft);
+    background: var(--c-bg); padding:6px 9px; border-radius:6px;
+  }
+
+  /* ---------- Design Tabs Bar (multiple open designs, like sheet tabs) ----------
+     Auto-hides while the workspace is idle/being edited, and slides back in
+     when the cursor hovers the bottom edge of the window (see #app.tabs-collapsed
+     below and _dtBindAutoHide in the app script). */
+  #design-tabs-bar{
+    grid-row:4; display:flex; align-items:stretch;
+    background: var(--c-white);
+    border-top:1px solid var(--c-gray);
+    padding: 0 6px; gap:4px; overflow:hidden;
+    position:relative; z-index:20;
+    transition: border-color .1s ease;
+  }
+  /* When collapsed the grid row itself is 0px tall, but the 1px border
+     would still paint as a thin visible line at the bottom of the window —
+     make it transparent in that state so nothing shows at all until the
+     bar is actually revealed. */
+  #app.tabs-collapsed #design-tabs-bar{
+    border-top-color: transparent;
+  }
+  #design-tabs-list{
+    display:flex; align-items:flex-end; gap:3px;
+    overflow-x:auto; overflow-y:hidden;
+    flex:1; min-width:0; padding-top:6px;
+    scrollbar-width:thin;
+  }
+  #design-tabs-list::-webkit-scrollbar{ height:4px; }
+  #design-tabs-list::-webkit-scrollbar-thumb{ background:var(--c-gray-mid); border-radius:4px; }
+  /* CAD-strip tab: flat, edge-toned, connected feel — matches the
+     square/edge-to-edge language used by the top menu bar rather than
+     the old rounded-browser-tab look. */
+  /* Parallelogram tab: slanted left/right edges (same slant, same width
+     top and bottom) via clip-path, CAD/blueprint-drawer style rather than
+     a rounded browser tab. Extra left/right padding keeps the name and
+     close button clear of the cut corners. */
+  .design-tab{
+    display:flex; align-items:center; gap:7px;
+    padding:7px 16px 7px 18px; max-width:194px; min-width:82px;
+    background: var(--c-gray); color: var(--c-text-soft);
+    font-size:11.5px; font-weight:700; letter-spacing:0.01em;
+    cursor:grab; white-space:nowrap;
+    border:1px solid var(--c-gray-mid); border-bottom:none;
+    user-select:none; flex-shrink:0; position:relative;
+    clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+    transition: background .12s ease, color .12s ease, transform .12s ease, box-shadow .12s ease;
+  }
+  .design-tab:hover{ background: var(--c-gray-mid); color: var(--c-navy); }
+  .design-tab.active{
+    background: var(--c-bg); color: var(--c-navy);
+    border-color: var(--c-gray-mid);
+    box-shadow: 0 -2px 0 var(--c-teal) inset, var(--shadow-sm);
+  }
+  .design-tab.active:hover{ background: var(--c-bg); color: var(--c-navy); }
+  /* Drag-to-reorder state: lifted, slightly shrunk, so the dragged tab
+     reads clearly against the strip; drop-side indicators show a teal
+     edge on whichever side of the hovered tab the drop will land. */
+  .design-tab.dt-dragging{
+    opacity:0.55; transform: scale(0.97); cursor:grabbing;
+  }
+  .design-tab.dt-drag-over-left{ box-shadow: -3px 0 0 var(--c-teal) inset, var(--shadow-sm); }
+  .design-tab.dt-drag-over-right{ box-shadow: 3px 0 0 var(--c-teal) inset, var(--shadow-sm); }
+  .design-tab-name{
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px;
+  }
+  .design-tab-name[contenteditable="true"]{
+    outline:1px solid var(--c-teal); border-radius:3px; padding:0 2px; cursor:text;
+    background: var(--c-white); color: var(--c-navy);
+  }
+  .design-tab-close{
+    display:flex; align-items:center; justify-content:center;
+    width:16px; height:16px; border-radius:4px; flex-shrink:0;
+    font-size:12px; line-height:1; opacity:0.5; color: var(--c-text-soft);
+  }
+  .design-tab-close:hover{ background:rgba(224,54,74,0.16); color:#e0364a; opacity:1; }
+  #design-tab-add{
+    display:flex; align-items:center; justify-content:center;
+    width:26px; height:26px; margin: 5px 2px; flex-shrink:0;
+    border-radius:6px; border:1px solid var(--c-gray-mid);
+    background:transparent; color:var(--c-text-soft);
+    font-size:15px; font-weight:800; cursor:pointer;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  #design-tab-add:hover{ background:rgba(20,200,196,0.18); border-color:var(--c-teal); color:var(--c-teal); }
+
+  /* ---------- Design Tab Context Menu (right-click a tab) ----------
+     Reuses the same visual chrome as .dropdown-panel/.dropdown-item so it
+     reads as part of the same design system, but is fixed-positioned at
+     the cursor instead of anchored under a top-bar button. */
+  .dt-ctx-menu{
+    position:fixed; background: var(--c-white); color: var(--c-text);
+    border:1px solid var(--c-gray); box-shadow: var(--shadow-lg);
+    padding:4px; min-width:180px; z-index:200;
+  }
+  .dt-ctx-menu .dropdown-item{ justify-content:flex-start; }
+
+  /* ---------- Bottom Status Bar ---------- */
+  #status-bar{
+    grid-row:5; display:flex; align-items:center; justify-content:space-between;
+    background: var(--c-navy); color: rgba(255,255,255,0.85);
+    font-size:11px; font-weight:700; letter-spacing:0.02em;
+    padding: 0 14px;
+    position:relative; z-index:30;
+  }
+  #status-bar .status-group{ display:flex; gap:18px; }
+  #autosave-indicator{ display:flex; align-items:center; gap:6px; }
+  #autosave-indicator .dot{ width:6px; height:6px; border-radius:50%; background: var(--c-teal); }
+
+  /* ---------- Context Menu ---------- */
+  #context-menu{
+    position:fixed; z-index:500; display:none;
+    background: var(--c-white); border:1px solid var(--c-gray);
+    border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+    padding:6px; min-width:180px;
+    max-height: 80vh; overflow-y: auto;
+    user-select:none; -webkit-user-select:none; -moz-user-select:none;
+  }
+  .ctx-item{
+    padding:8px 10px; border-radius:6px; font-weight:700; font-size:12.5px;
+    cursor:pointer; color: var(--c-text);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .ctx-item:hover{ background: var(--c-teal-soft); color: var(--c-navy); }
+  /* Inline properties section inside context menu */
+  #ctx-props-section{ display:none; }
+  #ctx-props-section .ctx-back{
+    display:flex; align-items:center; gap:6px;
+    padding:7px 10px; border-radius:6px; font-weight:800; font-size:12px;
+    cursor:pointer; color: var(--c-navy); margin-bottom:4px;
+    background: var(--c-bg);
+  }
+  #ctx-props-section .ctx-back:hover{ background: var(--c-teal-soft); }
+  #ctx-props-section .ctx-props-title{
+    font-weight:800; font-size:11px; letter-spacing:0.07em; text-transform:uppercase;
+    color: var(--c-text-soft); padding: 4px 10px 8px; border-bottom:1px solid var(--c-gray); margin-bottom:8px;
+  }
+  #ctx-props-inner .prop-row{ margin-bottom:12px; }
+  #ctx-props-inner .prop-row label{ display:block; margin-bottom:4px; }
+  #ctx-props-inner .prop-value{
+    font-weight:700; font-size:12.5px; color:var(--c-text);
+    background: var(--c-bg); border:1px solid var(--c-gray);
+    border-radius:6px; padding:6px 9px;
+  }
+  #ctx-props-inner .prop-input{
+    width:100%; font-weight:700; font-size:12.5px; color:var(--c-text);
+    background: var(--c-white); border:1.5px solid var(--c-gray);
+    border-radius:6px; padding:6px 9px; transition: border-color .12s ease;
+    box-sizing:border-box;
+  }
+  #ctx-props-inner .prop-input:focus{ outline:none; border-color: var(--c-teal); box-shadow: 0 0 0 3px var(--c-teal-soft); }
+  #ctx-props-inner{ padding: 4px 4px 2px; min-width:220px; }
+  /* Text inputs/textareas must stay normally selectable/editable even
+     though their containers (context menu, comp-node) are marked
+     user-select:none above. */
+  input, textarea{ user-select:text; -webkit-user-select:text; -moz-user-select:text; }
+
+  /* scrollbars: subtle, professional */
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background: var(--c-gray-mid); border-radius:6px; }
+  ::-webkit-scrollbar-track{ background: transparent; }
+
+  @media (max-width: 900px){
+    #main-body{ grid-template-columns: 1fr; }
+  }

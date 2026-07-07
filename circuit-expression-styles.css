@@ -1,0 +1,39 @@
+  .circexpr-output-row{
+    display:flex; align-items:center; gap:9px; padding:9px 10px; border:1.5px solid #e3e7ec;
+    border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:700; color:#16233a;
+  }
+  .circexpr-output-row input{ accent-color:#14c8c4; width:15px; height:15px; flex:none; }
+  .circexpr-result-card{ border:1.5px solid #e3e7ec; border-radius:10px; padding:12px 14px; }
+  .circexpr-result-name{ font-weight:800; font-size:12.5px; color:#0f2a4a; margin-bottom:8px; }
+  .circexpr-result-label{ font-size:9.5px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; color:#8a93a1; margin-bottom:3px; }
+  .circexpr-result-expr{
+    font-family:'Courier New',monospace; font-size:15px; font-weight:700; color:#16233a;
+    background:#f4f6f9; border:1px solid #e3e7ec; border-radius:6px; padding:8px 10px;
+    word-break:break-all; margin-bottom:9px;
+  }
+  .circexpr-result-canon{
+    font-family:'Courier New',monospace; font-size:12px; font-weight:700; color:#51607a;
+    word-break:break-all; margin-bottom:10px;
+  }
+  .circexpr-result-actions{ display:flex; gap:8px; }
+  .circexpr-btn{
+    padding:6px 12px; border-radius:7px; border:1.5px solid #cfe0fb; background:#fff;
+    font-weight:800; font-size:11.5px; color:#1e5fcc; cursor:pointer;
+  }
+  .circexpr-btn:hover{ background:#eef4ff; }
+  .circexpr-btn.copied{ border-color:#14c8c4; color:#0a8f8c; background:#eafffe; }
+
+  /* Simplify Circuit: before/after stat grid + schematic preview cards */
+  .sc-stats-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+  .sc-stat{ border:1.5px solid #e3e7ec; border-radius:9px; padding:9px 8px; text-align:center; }
+  .sc-stat-label{ font-size:9px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; color:#8a93a1; margin-bottom:6px; }
+  .sc-stat-nums{ display:flex; align-items:center; justify-content:center; gap:5px; font-family:'Courier New',monospace; }
+  .sc-stat-before{ font-size:13px; font-weight:700; color:#9aa4b2; text-decoration:line-through; }
+  .sc-stat-arrow{ font-size:11px; color:#8a93a1; }
+  .sc-stat-after{ font-size:16px; font-weight:800; color:#16233a; }
+  .sc-stat-delta{ margin-top:5px; font-size:10.5px; font-weight:800; }
+  .sc-stat-delta.down{ color:#0a8f5c; }
+  .sc-stat-delta.flat{ color:#8a93a1; }
+  .sc-preview-card{ border:1.5px solid #e3e7ec; border-radius:10px; padding:10px 12px 12px; }
+  .sc-preview-title{ font-weight:800; font-size:11.5px; color:#0f2a4a; margin-bottom:6px; }
+  .sc-preview-img{ width:100%; max-height:230px; object-fit:contain; display:block; background:#ffffff; border:1px solid #e3e7ec; border-radius:7px; }

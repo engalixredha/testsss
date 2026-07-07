@@ -1,0 +1,9 @@
+  .km2c-name-input, .tt2c-name-input{ width:56px; text-align:center; padding:8px 4px; }
+  .km2c-cell-editable, .tt2c-cell-editable{ cursor:pointer; user-select:none; transition:background 0.08s; }
+  .km2c-cell-editable:hover, .tt2c-cell-editable:hover{ background:#eef4ff !important; }
+  .tt2c-row-table{ border-collapse:collapse; font-family:var(--font-ui); }
+  .tt2c-row-table th, .tt2c-row-table td{ border:1px solid #c9d3e0; text-align:center; padding:6px 12px; }
+  .tt2c-row-table th{ background:#0f2a4a; color:#f5f8fc; font-size:11px; font-weight:800; }
+  .tt2c-row-table td{ font-weight:700; font-size:13px; color:#16233a; background:#fff; }
+  .tt2c-out-col{ font-weight:800; }
+  .kmtt-section-label{ font-size:9.5px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; color:#8a93a1; text-align:center; margin:14px 0 8px; }

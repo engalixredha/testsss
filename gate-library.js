@@ -307,8 +307,8 @@ const KIT_NETLISTS = {
 function _buildKitLayout(type, def){
   const net = KIT_NETLISTS[type];
   if(!net) return null;
-  const GW = 44, GH = 32;         // gate box size (kept compact — labels use kg-glabel's opaque halo to stay legible at this size)
-  const COL_GAP = 52, SUBCOL_GAP = 24, ROW_GAP = 20, MARGIN_X = 36, MARGIN_Y = 24;
+  const GW = 32, GH = 22;         // gate box size (kept compact — labels use kg-glabel's opaque halo to stay legible at this size)
+  const COL_GAP = 38, SUBCOL_GAP = 16, ROW_GAP = 12, MARGIN_X = 36, MARGIN_Y = 16;
   const MAX_ROWS_PER_LAYER = 6;    // wrap a layer into extra sub-columns beyond this many gates
   const PIN_PAD = KIT_PIN_INSET;  // inset of external I/O connection points from the board's raw edge — matches the real, wireable pin's position (see CircuitComponent.pinWorldPos) so the schematic's own wires end exactly where the real pin sits
   // 1) Depth (layer) of every gate = 1 + max depth of its gate-inputs (0 for pure external-input gates)
@@ -532,7 +532,7 @@ function _kitInternalSVG(type, def){
   const gatePins = L.gates.map(g=>{
     const inDots = g.inputs.map((_,k)=>{
       const py = g.y + (k+1)*g.h/(g.inputs.length+1);
-      return `<circle cx="${g.x}" cy="${py}" r="2.2" class="kg-pin"/><circle cx="${g.x}" cy="${py}" r="0.9" class="kg-pin-core"/>`;
+      return `<circle cx="${g.x}" cy="${py}" r="1.8" class="kg-pin"/><circle cx="${g.x}" cy="${py}" r="0.75" class="kg-pin-core"/>`;
     }).join('');
     // Label sits centered inside the gate's own body (not underneath it) —
     // nudged slightly left of true center since every gate outline (AND/
@@ -543,7 +543,7 @@ function _kitInternalSVG(type, def){
     const labelX = g.x + g.w*0.44;
     const labelY = g.y + g.h/2 + 3;
     return `${inDots}
-      <circle cx="${g.out.x}" cy="${g.out.y}" r="2.2" class="kg-pin"/><circle cx="${g.out.x}" cy="${g.out.y}" r="0.9" class="kg-pin-core"/>
+      <circle cx="${g.out.x}" cy="${g.out.y}" r="1.8" class="kg-pin"/><circle cx="${g.out.x}" cy="${g.out.y}" r="0.75" class="kg-pin-core"/>
       <text x="${labelX}" y="${labelY}" text-anchor="middle" class="kg-glabel">${g.label}</text>`;
   }).join('');
   // Lane-spreading: wires that run between the same two layers (same
@@ -586,7 +586,7 @@ function _kitInternalSVG(type, def){
         .kg-outline{ fill:#ffffff; stroke:var(--c-navy); stroke-width:1.8; }
         .kg-bubble{ fill:#ffffff; stroke:var(--c-navy); stroke-width:1.8; }
         .kg-lead{ stroke:var(--c-navy); stroke-width:1.8; fill:none; }
-        .kg-wire{ stroke:var(--c-navy); stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round; opacity:0.82; }
+        .kg-wire{ stroke:var(--c-navy); stroke-width:1.0; stroke-linecap:round; stroke-linejoin:round; opacity:0.82; }
         /* Pins mirror the live .pin look (a solid ring with a light core)
            instead of a single flat dot, so the x-ray connections read the
            same way the real click-to-wire pins do on the main canvas. */
@@ -596,7 +596,7 @@ function _kitInternalSVG(type, def){
            out to several destinations — solid and slightly larger than a
            pin dot so it reads distinctly from a genuine crossing hop. */
         .kg-junction{ fill:var(--c-navy); }
-        .kg-glabel{ font-size:8px; font-family:'Segoe UI',Arial,sans-serif; fill:var(--c-navy); font-weight:800; letter-spacing:0.2px; paint-order:stroke; stroke:#ffffff; stroke-width:3px; stroke-linejoin:round; }
+        .kg-glabel{ font-size:6.5px; font-family:'Segoe UI',Arial,sans-serif; fill:var(--c-navy); font-weight:800; letter-spacing:0.15px; paint-order:stroke; stroke:#ffffff; stroke-width:2.4px; stroke-linejoin:round; }
         .kg-title{ font-size:9.5px; font-family:'Segoe UI',Arial,sans-serif; fill:var(--c-navy); font-weight:800; letter-spacing:0.6px; }
         .kg-title-rule{ stroke:var(--c-teal); stroke-width:1.4; }
       </style>

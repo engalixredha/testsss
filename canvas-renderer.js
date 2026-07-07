@@ -30,7 +30,7 @@ class CanvasRenderer{
     // canvas, not inside the zoom-scaled #world), so the line stays visually
     // the same thickness whether the user is zoomed all the way in or out.
     // Default chosen to match the visual weight of a pin (10px dot) / probe.
-    this.wireWidth = 4.4;
+    this.wireWidth = 3.0;
     // resize() is called explicitly from App.init() after the DOM has fully
     // laid out, so getBoundingClientRect() returns the real dimensions.
     this.viewportSize = {w:0, h:0};
@@ -167,50 +167,36 @@ class CanvasRenderer{
     ctx.restore();
   }
   /** Draws the hard left/top workspace edge at world x=0 / y=0 once
-   *  _clampPan() has pinned the pan there: a flat, modern picture-frame
-   *  band in cross-section — three flat-color strips (dark outer edge,
-   *  a mid-tone body, a crisp inner accent line) mitered at the corner,
-   *  the same stepped-profile concept as a wall frame but rendered in
-   *  clean CAD-style flat fills instead of wood-grain gradients. Each
-   *  band is only ever on-screen exactly when that axis is panned all
-   *  the way home, since pan.x/pan.y never go positive — drag (or zoom)
-   *  away from the corner and it scrolls off naturally. */
+   *  _clampPan() has pinned the pan there: a single flat-color band (no
+   *  multi-tone strip breakdown) with one crisp inner seam line against
+   *  the canvas, in the app's own navy tone. Each band is only ever
+   *  on-screen exactly when that axis is panned all the way home, since
+   *  pan.x/pan.y never go positive — drag (or zoom) away from the corner
+   *  and it scrolls off naturally. */
   _drawWorkspaceBounds(ctx, w, h){
     const edgeX = this.pan.x, edgeY = this.pan.y;
     const showLeft = edgeX > -10 && edgeX < w;
     const showTop  = edgeY > -10 && edgeY < h;
     if(!showLeft && !showTop) return;
-    const FRAME = 14;          // total moulding width
-    const OUTER = 4;           // outer dark strip width
-    const ACCENT = 2;          // inner accent line width
-    const C_OUTER  = '#1f1f1f'; // near-black outer edge
-    const C_BODY   = '#4d4d4d'; // mid-gray body
-    const C_ACCENT = '#8a8a8a'; // light-gray accent line (grayscale, no hue)
-    const C_INNER  = '#1f1f1f'; // near-black inner lip against canvas
+    const FRAME = 14;          // total band width
+    const C_BAND  = '#0f2a4a'; // single flat navy band color
+    const C_SEAM  = 'rgba(0,0,0,0.35)'; // inner seam line against canvas
     ctx.save();
 
     // ---- Left band -------------------------------------------------
     if(showLeft){
-      ctx.fillStyle = C_OUTER;
-      ctx.fillRect(edgeX, 0, OUTER, h);
-      ctx.fillStyle = C_BODY;
-      ctx.fillRect(edgeX + OUTER, 0, FRAME - OUTER - ACCENT, h);
-      ctx.fillStyle = C_ACCENT;
-      ctx.fillRect(edgeX + FRAME - ACCENT, 0, ACCENT, h);
-      ctx.strokeStyle = C_INNER;
+      ctx.fillStyle = C_BAND;
+      ctx.fillRect(edgeX, 0, FRAME, h);
+      ctx.strokeStyle = C_SEAM;
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(edgeX + FRAME + 0.5, 0); ctx.lineTo(edgeX + FRAME + 0.5, h); ctx.stroke();
     }
 
     // ---- Top band ----------------------------------------------------
     if(showTop){
-      ctx.fillStyle = C_OUTER;
-      ctx.fillRect(0, edgeY, w, OUTER);
-      ctx.fillStyle = C_BODY;
-      ctx.fillRect(0, edgeY + OUTER, w, FRAME - OUTER - ACCENT);
-      ctx.fillStyle = C_ACCENT;
-      ctx.fillRect(0, edgeY + FRAME - ACCENT, w, ACCENT);
-      ctx.strokeStyle = C_INNER;
+      ctx.fillStyle = C_BAND;
+      ctx.fillRect(0, edgeY, w, FRAME);
+      ctx.strokeStyle = C_SEAM;
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, edgeY + FRAME + 0.5); ctx.lineTo(w, edgeY + FRAME + 0.5); ctx.stroke();
     }
@@ -221,13 +207,9 @@ class CanvasRenderer{
     if(this.canvasCols){
       const edgeXR = this.pan.x + this.canvasCols * this.gridSize * this.zoom;
       if(edgeXR > -10 && edgeXR < w + FRAME){
-        ctx.fillStyle = C_OUTER;
-        ctx.fillRect(edgeXR - OUTER, 0, OUTER, h);
-        ctx.fillStyle = C_BODY;
-        ctx.fillRect(edgeXR - FRAME + ACCENT, 0, FRAME - OUTER - ACCENT, h);
-        ctx.fillStyle = C_ACCENT;
-        ctx.fillRect(edgeXR - FRAME, 0, ACCENT, h);
-        ctx.strokeStyle = C_INNER;
+        ctx.fillStyle = C_BAND;
+        ctx.fillRect(edgeXR - FRAME, 0, FRAME, h);
+        ctx.strokeStyle = C_SEAM;
         ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(edgeXR - FRAME - 0.5, 0); ctx.lineTo(edgeXR - FRAME - 0.5, h); ctx.stroke();
       }
@@ -237,54 +219,19 @@ class CanvasRenderer{
     if(this.canvasRows){
       const edgeYB = this.pan.y + this.canvasRows * this.gridSize * this.zoom;
       if(edgeYB > -10 && edgeYB < h + FRAME){
-        ctx.fillStyle = C_OUTER;
-        ctx.fillRect(0, edgeYB - OUTER, w, OUTER);
-        ctx.fillStyle = C_BODY;
-        ctx.fillRect(0, edgeYB - FRAME + ACCENT, w, FRAME - OUTER - ACCENT);
-        ctx.fillStyle = C_ACCENT;
-        ctx.fillRect(0, edgeYB - FRAME, w, ACCENT);
-        ctx.strokeStyle = C_INNER;
+        ctx.fillStyle = C_BAND;
+        ctx.fillRect(0, edgeYB - FRAME, w, FRAME);
+        ctx.strokeStyle = C_SEAM;
         ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(0, edgeYB - FRAME - 0.5); ctx.lineTo(w, edgeYB - FRAME - 0.5); ctx.stroke();
       }
     }
 
-
-    // ---- Mitered corner: a 45° split fill where the two bands cross,
-    // each half keeping its own band's flat color so the corner reads
-    // as a true mitered joint rather than a square overlap.
+    // ---- Corner: single flat fill where the two bands cross (no
+    // mitered multi-tone split needed since it's one color throughout).
     if(showLeft && showTop){
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(edgeX, edgeY, FRAME, FRAME);
-      ctx.clip();
-      ctx.fillStyle = C_OUTER;
+      ctx.fillStyle = C_BAND;
       ctx.fillRect(edgeX, edgeY, FRAME, FRAME);
-      ctx.fillStyle = C_BODY;
-      ctx.beginPath();
-      ctx.moveTo(edgeX + OUTER, edgeY + OUTER);
-      ctx.lineTo(edgeX + FRAME, edgeY + OUTER);
-      ctx.lineTo(edgeX + FRAME, edgeY + FRAME);
-      ctx.lineTo(edgeX + OUTER, edgeY + FRAME);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = C_ACCENT;
-      ctx.beginPath();
-      ctx.moveTo(edgeX + FRAME - ACCENT, edgeY + FRAME - ACCENT);
-      ctx.lineTo(edgeX + FRAME, edgeY + FRAME - ACCENT);
-      ctx.lineTo(edgeX + FRAME, edgeY + FRAME);
-      ctx.lineTo(edgeX + FRAME - ACCENT, edgeY + FRAME);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-      // 45° miter seams
-      ctx.strokeStyle = 'rgba(20,20,20,0.5)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(edgeX, edgeY); ctx.lineTo(edgeX + OUTER, edgeY + OUTER);
-      ctx.moveTo(edgeX + FRAME, edgeY); ctx.lineTo(edgeX + FRAME - ACCENT, edgeY + ACCENT);
-      ctx.moveTo(edgeX, edgeY + FRAME); ctx.lineTo(edgeX + ACCENT, edgeY + FRAME - ACCENT);
-      ctx.stroke();
     }
     ctx.restore();
   }
